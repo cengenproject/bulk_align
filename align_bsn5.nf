@@ -30,12 +30,12 @@ script_version = "bsn6"
 
 
 // --------    Define references    --------
-ref_genome = 'c_elegans.PRJNA13758.'+params.WSversion+'.genomic.fasta'
+ref_genome = 'c_elegans.PRJNA13758.'+params.WSversion+'.genomic.fa'
 ref_gtf = 'c_elegans.PRJNA13758.'+params.WSversion+'.canonical_geneset.gtf'
 
 ref_gtf_index = params.references_dir + '/' + params.WSversion + '/' + ref_gtf
-STAR_ref_dir = params.references_dir + "/" + params.WSversion + "/star_index_2-7-7a/"
-
+WS_ref_dir = params.references_dir + "/" + params.WSversion
+STAR_index_dir = WS_ref_dir + "/star_index_2-7-7a/"
 
 
 
@@ -75,6 +75,9 @@ process testEverything{
 	
 	output:
 	val true into tested_successfully
+
+	module 'R'
+	module 'STAR'
 	
 	shell:
 	'''
@@ -87,28 +90,38 @@ process testEverything{
 	nudup.py --version || exit 1
 	
 	# Check that references are available
-	if [ -d !{STAR_ref_dir} ]
+	if [ ! -d !{STAR_index_dir} ]
 	then
-		if [ -e !{STAR_ref_dir}/SA ]
+		echo "STAR index directory does not exist, downloading GTF and genome with wbData."
+		R -e 'wbData::wb_get_gtf_path("!{params.WSversion}", "!{WS_ref_dir}")'
+		zcat !{WS_ref_dir}/!{ref_gtf}.gz > !{WS_ref_dir}/!{ref_gtf}
+		R -e 'wbData::wb_get_genome_path("!{params.WSversion}", "!{WS_ref_dir}")'
+		zcat !{WS_ref_dir}/!{ref_genome}.gz > !{WS_ref_dir}/!{ref_genome}
+		echo
+		echo "Creating index"
+		STAR --runThreadN $SLURM_CPUS_PER_TASK \
+			--runMode genomeGenerate \
+			--genomeDir !{STAR_index_dir} \
+			--genomeFastaFiles !{WS_ref_dir}/!{ref_genome} \
+			--sjdbGTFfile !{WS_ref_dir}/!{ref_gtf} \
+			--sjdbOverhang 149 \
+			--genomeSAindexNbases 12
+	fi
+	if [ ! -f !{STAR_index_dir}/SA ]
+	then
+		echo "STAR index directory does not contain index as expected."
+		exit 1
+	else
+		if [ $(ls !{STAR_index_dir} | wc -w) -lt 14 ]
 		then
-			if [ $(ls !{STAR_ref_dir} | wc -w) -lt 14 ]
-			then
-				echo "STAR index directory contains too few elements."
-				exit 1
-			elif [ $(du !{STAR_ref_dir}/SA | cut -f1) -lt $((500 * 1024)) ]
-			then
-				echo "STAR index smaller than 500 MB."
-				exit 1
-			fi
-		else
-			echo "STAR index directory does not contain index as expected."
+			echo "STAR index directory contains too few elements."
+			exit 1
+		elif [ $(du !{STAR_index_dir}/SA | cut -f1) -lt $((500 * 1024)) ]
+		then
+			echo "STAR index smaller than 500 MB."
 			exit 1
 		fi
-	else
-		echo "STAR index directory does not exist."
-		exit 1
 	fi
-	
 	'''
 }
 
@@ -121,10 +134,10 @@ process align{
 	
 	publishDir mode: 'copy', saveAs: { filename ->
 											def filetype = (filename =~ /.*(\.log|\.bam)$/)[0][1]
-											def basepath = if(filetype == ".bam"){
-												'/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_bams/'
+											if(filetype == ".bam"){
+												def basepath = '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_bams/'
 											} else {
-												'/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_logs/'
+												def basepath = '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_logs/'
 											}
 											basepath + sample + sample_suffix + filtetype
 									}
@@ -204,7 +217,7 @@ process align{
 	echo "Using STAR version $(STAR --version)" >> star.log
 	
 	STAR --runThreadN $SLURM_CPUS_PER_TASK \
-		--genomeDir !{STAR_ref_dir} \
+		--genomeDir !{STAR_index_dir} \
 		--readFilesIn trimmed_R1.fastq.gz trimmed_R2.fastq.gz \
 		--readFilesCommand zcat \
 		--outFileNamePrefix aligned_ \
