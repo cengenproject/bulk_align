@@ -14,7 +14,7 @@ batch_names = [ 'alexis_test': 'bis']
 
 // Locations and parameters
 params.root_dir = '/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk'
-params.WSversion = 'WS277'
+params.WSversion = 'WS281'
 params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
 /* ----------------------------------------------------------------------------
@@ -23,7 +23,7 @@ params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
 
 // update when this script is modified
-script_version = "bsn5"
+script_version = "bsn6"
 
 
 
@@ -119,7 +119,15 @@ process align{
 	time '14d'
 	memory '15GB'
 	
-	publishDir '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version, mode: 'copy', saveAs: { filename -> sample + sample_suffix + (filename =~ /.*(\.log|\.bam)$/)[0][1] }
+	publishDir mode: 'copy', saveAs: { filename ->
+											def filetype = (filename =~ /.*(\.log|\.bam)$/)[0][1]
+											def basepath = if(filetype == ".bam"){
+												'/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_bams/'
+											} else {
+												'/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_logs/'
+											}
+											basepath + sample + sample_suffix + filtetype
+									}
 
 	input:
 	val tested_successfully
