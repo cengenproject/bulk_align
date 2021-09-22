@@ -132,14 +132,14 @@ process align{
 	time '14d'
 	memory '15GB'
 	
-	publishDir mode: 'copy', saveAs: { filename ->
+	publishDir mode: 'copy', path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' , saveAs: { filename ->
 											def filetype = (filename =~ /.*(\.log|\.bam)$/)[0][1]
 											if(filetype == ".bam"){
-												def basepath = '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_bams/'
+												basepath = script_version + '_bams/'
 											} else {
-												def basepath = '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version + '_logs/'
+												basepath = script_version + '_logs/'
 											}
-											basepath + sample + sample_suffix + filtetype
+											basepath + sample + sample_suffix + filetype
 									}
 
 	input:
