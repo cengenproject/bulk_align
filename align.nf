@@ -9,7 +9,7 @@
 				'201022_D00306_1322': 't1',
 				'201022_D00306_1323': 't2']*/
 
-batch_names = [ 'alexis_test': 'bis']
+batch_names = [ '000000_D00000_0000': 'quad']
 
 
 // Locations and parameters
@@ -44,9 +44,7 @@ STAR_index_dir = WS_ref_dir + "/star_index_2-7-7a/"
 // -------- Prepare channels for input and output --------
 batch_dirs = batch_names.keySet().collect { "${params.root_dir}/${it}/Sample_*" }
 sample_dir = Channel.fromPath( batch_dirs, type: 'dir' ).map {it ->
-//	(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]
-	(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/(alexis_test)/Sample_([A-Zef12]{2,4}r[0-9]{1,4})")[0]
-
+	(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]
 }
 
 
