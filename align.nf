@@ -9,7 +9,7 @@
 				'201022_D00306_1322': 't1',
 				'201022_D00306_1323': 't2']*/
 
-batch_names = [ '000000_D00000_0000': 'quad']
+batch_names = [ '000000_D00000_0000': 'sept']
 
 
 // Locations and parameters
@@ -123,6 +123,46 @@ process testEverything{
 	'''
 }
 
+process merge{
+	cpus '1'
+	time '2h'
+	memory '15GB'
+
+	input:
+	  val tested_successfully
+	  tuple path(sample_dir), val(batch), val(sample) from sample_dir
+	  val sample_suffix
+
+	output:
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix), path('merge.log') into merged_paths
+	
+	shell:
+	'''
+	echo "---------------------------------- Merging FASTQ files -----------------------------------"
+
+	
+	echo "Merging files !{sample_dir}" >> merge.log
+	echo >> merge.log
+
+	cat !{sample_dir}/!{sample}_*_R1_00?.fastq.gz > merged_R1.fastq.gz
+	cat !{sample_dir}/!{sample}_*_R2_00?.fastq.gz > merged_I1.fastq.gz
+	cat !{sample_dir}/!{sample}_*_R3_00?.fastq.gz > merged_R2.fastq.gz
+
+	# Trim the index to 8 bp for NuDup
+	zcat merged_I1.fastq.gz | awk 'NR%4 == 1 {print} NR%4 == 2 {print substr($0, 0, 8)} NR%4 == 3 {print} NR%4 == 0 {print substr($0,0,8)}' > trimmed_I1.fq
+	
+	cnt_r1=$(zcat merged_R1.fastq.gz | wc -l)
+
+	echo "Merged reads: $cnt_r1" >> merge.log
+	echo >> merge.log
+	echo >> merge.log
+
+	echo "------ Merged reads: $cnt_r1 ------"	
+	echo
+	'''
+
+
+}
 
 process align{
 
@@ -141,10 +181,7 @@ process align{
 									}
 
 	input:
-	val tested_successfully
-	tuple path(sample_dir), val(batch), val(sample) from sample_dir
-	val sample_suffix
-	
+	tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix), path('merge.log') from merged_paths
 	
 	output:
 	path "dedup.sorted.dedup.bam"
@@ -152,41 +189,6 @@ process align{
 	
 	shell:
 	'''
-	echo "##########################################################################################"
-	echo "###################                    Operations                   ######################"
-	echo "##########################################################################################"
-	echo
-	echo
-	echo "------------------------------------------------------------------------------------------"
-	echo "---------------------------------- Merging FASTQ files -----------------------------------"
-	echo "------------------------------------------------------------------------------------------"
-
-	# extract sample name (e.g. VCr12)
-	sample=!{sample}!{sample_suffix}
-	
-	
-	
-	echo "Merging files !{sample_dir}" >> merge.log
-	echo >> merge.log
-
-	cat !{sample_dir}/!{sample}_*_R1_00?.fastq.gz > merged_R1.fastq.gz
-	cat !{sample_dir}/!{sample}_*_R2_00?.fastq.gz > merged_I1.fastq.gz
-	cat !{sample_dir}/!{sample}_*_R3_00?.fastq.gz > merged_R2.fastq.gz
-
-	# Trim the index to 8 bp for NuDup
-	zcat merged_I1.fastq.gz | awk 'NR%4 == 1 {print} NR%4 == 2 {print substr($0, 0, 8)} NR%4 == 3 {print} NR%4 == 0 {print substr($0,0,8)}' > trimmed_I1.fq
-	
-	# Check for problems in nb of reads
-	cnt_r1=$(zcat merged_R1.fastq.gz | wc -l)
-	cnt_r2=$(zcat merged_R2.fastq.gz | wc -l)
-	cnt_i1=$(zcat merged_I1.fastq.gz | wc -l)
-
-	echo "Merged reads: $cnt_r1" >> merge.log
-	echo >> merge.log
-	echo >> merge.log
-
-	echo "------ Merged reads: $cnt_r1 ------"	
-	echo
 
 
 	echo "------------------------------------------------------------------------------------------"
@@ -253,6 +255,8 @@ process align{
 	# Then go through each step, register warnings or errors at the beginning of log file,
 	#then dump all diagnostics into the file (also upload to DB), and  finally all other logs from previous softwares.
 	
+	sample=!{sample}!{sample_suffix}
+	
 	echo "Finished running alignment !{script_version} of sample $sample on $(date +%F)."
 	echo
 	echo "     -----     "
@@ -261,6 +265,9 @@ process align{
 	
 	
 	# Nb of reads after merge 
+	cnt_r1=$(zcat merged_R1.fastq.gz | wc -l)
+	cnt_r2=$(zcat merged_R2.fastq.gz | wc -l)
+	cnt_i1=$(cat trimmed_I1.fq | wc -l)
 	
 	if [ $cnt_r1 -ne $cnt_r2 -o $cnt_r1 -ne $cnt_i1 ]
 	then
