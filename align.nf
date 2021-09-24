@@ -9,7 +9,7 @@
 				'201022_D00306_1322': 't1',
 				'201022_D00306_1323': 't2']*/
 
-batch_names = [ '000000_D00000_0000': 'sixdec']
+batch_names = [ '000000_D00000_0000': 'octdec']
 
 
 // Locations and parameters
@@ -190,7 +190,7 @@ process qc{
 
 	shell:
         '''
-        fastqc --extract merged_R*
+        fastqc --extract --threads $SLURM_CPUS_PER_TASK merged_R*
         '''	
 
 }
@@ -211,6 +211,16 @@ process align{
 		saveAs: { sample + sample_suffix + '.bam' }
 	
 	publishDir mode: 'copy',
+                pattern: '*_SJ.out.tab',
+                path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_junctions/',
+                saveAs: { sample + sample_suffix + '.SJ.tab' }
+	
+	publishDir mode: 'copy',
+                pattern: '*.bam.bai',
+                path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
+                saveAs: { sample + sample_suffix + '.bam.bai' }
+	
+	publishDir mode: 'copy',
 		pattern: '*_Log.final.out',
 		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_logs/',
 		saveAs: { sample + sample_suffix + '_STAR_stats.log'}
@@ -226,6 +236,7 @@ process align{
 	  path "aligned_Log.out"
 	  tuple path("bbduk.log"), path("star.log"), path("nudup.log"), path("dedup_dup_log.txt") into alignment_logs
 	  path "dedup.sorted.dedup.bam" into aligned_bam
+	  path "aligned_SJ.out.tab"
 	
 	shell:
 	'''
@@ -270,6 +281,10 @@ process align{
 			 --length 8 \
 			 -o dedup \
 			 aligned_Aligned.sortedByCoord.out.bam >> nudup.log
+
+	echo "------------------------------------- BAM indexing --------------------------------------"
+	samtools index -@ $SLURM_CPUS_PER_TASK dedup.sorted.dedup.bam
+	
 	'''
 }
 
