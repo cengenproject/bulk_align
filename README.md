@@ -27,18 +27,18 @@ export NXF_TEMP='/gpfs/ycga/scratch60/ysm/hammarlund/aw853/nextflow_workdir'
 Explanations: the content of the config file tell Nextflow that it should use SLURM, on a "general" partition, and can start up to 20 processes in parallel. The environment variables defined in bashrc indicate that the temporary files should be stored on the scratch partition. The workflow generates *a lot* of intermediary files, you don't want them stored in your project partition, or it will get full very quickly.
 
 ## Script
-In your project directory (or scratch), copy the `alig_bsn5.nf` script.
+In your project directory (or scratch), copy the `align.nf` script.
 
 I recommend creating a wrapper script, `run_nf.sh`, containing the following:
 ```
 #!/bin/bash
 #SBATCH --partition=general
-#SBATCH --job-name=nf_wrap_bsn5
+#SBATCH --job-name=nf_wrap_bsn
 #SBATCH -c 1
 #SBATCH --mem=1G
 #SBATCH --time=20-05:10:00
 
-nextflow run alig_bsn5.nf -resume
+nextflow run align.nf -resume
 ```
 it will ensure that Nextflow is started on a compute node, and that it won't get interrupted if you loose your connection. Alternatively, you can consider `screen` or `tmux`.
 
@@ -52,7 +52,13 @@ You can also check that the reference files (STAR index, ...) are available wher
 
 Run the script with `sbatch run_nf.sh` (if you created a wrapper as indicated above).
 
-Outputs: produces one log file, one bam file, and one bam.bai file that are all saved in /SAY.
+Outputs: in `/SAY`, create directories if needed:
+* `bams`: bam files after alignment and deduplication
+* `junctions`: the SJ.out.tab file created by STAR (not deduplicated)
+* `logs`: various logs, the main one with a summary of all steps, but also STAR logs, and FASTQC HTML report
+
+In addition, uploads a selection of relevant information to the database, use it to detect outliers etc.
+
 
 After running, check the slurm file (if using a wrapper), and the `.nextflow.log` hidden file for errors. In case of errors, the log file should contain the path to the temporary directory where the command was run, you can check the files in there.
 
@@ -62,4 +68,6 @@ After running, check the slurm file (if using a wrapper), and the `.nextflow.log
 bss2: BBduk (trimming) + STAR (mapping) + SAMtools (for dedup), used for the scRNA-Seq paper (because the panneuronal samples had no UMI measured)
 bsn3: BBduk (trimming) + STAR (mapping) + NuDup (for dedup), but mistake preventing metadata to be uploaded to database (so, gives an error message)
 bsn4 (not used): same as bsn3, but with correct database update
-bsn5 (in progress): BBduk + STAR + NuDup, written in Nextflow, including database update and QC.
+bsn5,bsn6: BBduk + STAR + NuDup, written in Nextflow, including database update and QC. These were development versions, not really used.
+bsn7: BBduk+STAR+NuDup, with junction files exported, FASTQC and saving in the "cengen" database (vs test database previously).
+

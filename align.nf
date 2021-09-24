@@ -4,12 +4,16 @@
 
 // Define inputs batch directory name and associated suffix for each
 
-/*batch_names = [ '200312_D00306_1303': '',
-				'200320_D00306_1305': '',
-				'201022_D00306_1322': 't1',
-				'201022_D00306_1323': 't2']*/
+batch_names = [ '200312_D00306_1303': '',
+		'200320_D00306_1305': '',
+		'201022_D00306_1322': 't1',
+		'201022_D00306_1323': 't2',
+		'210108_D00306_1332': '',
+		'210622_D00306_1363': 't1',
+		'210622_D00306_1364': 't2']
 
-batch_names = [ '000000_D00000_0000': 'univin']
+// test samples
+//batch_names = [ '000000_D00000_0000': 'bis']
 
 
 // Locations and parameters
@@ -23,7 +27,7 @@ params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
 
 // update when this script is modified
-script_version = "bsn6"
+script_version = "bsn7"
 
 
 
@@ -140,7 +144,7 @@ process initialize_db_entry{
 	shell:
 	'''
 		
-	sql_command="INSERT INTO alig3
+	sql_command="INSERT INTO alig
 		SET alig_lib_id		= '!{sample}!{sample_suffix_for_init}',
 		    alig_pid		= '!{script_version}',
 		    alig_sequ_batch	= '!{batch}',
@@ -159,7 +163,7 @@ process initialize_db_entry{
 	mysql --host=23.229.215.131 \
 		--user=$username \
 		--password=$password \
-		--database=test_cengen \
+		--database=cengen \
 		--execute="$sql_command"
 	'''
 }
@@ -525,7 +529,7 @@ process save_logs{
 	comments=""
 	
 	
-	sql_command="UPDATE alig3
+	sql_command="UPDATE alig
 	  SET	alig_completed			= '1',
 		alig_aligned_reads	 	= '"$(($star_unique_maps+$star_multi_maps))"',
 		alig_merged_reads		= '"$cnt_r1"',
@@ -565,7 +569,7 @@ process save_logs{
 	mysql --host=23.229.215.131 \
 		--user=$username \
 		--password=$password \
-		--database=test_cengen \
+		--database=cengen \
 		--execute="$sql_command"
 
 	echo "Uploaded to database." >> sample.log
