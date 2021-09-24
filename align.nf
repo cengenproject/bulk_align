@@ -9,7 +9,7 @@
 				'201022_D00306_1322': 't1',
 				'201022_D00306_1323': 't2']*/
 
-batch_names = [ '000000_D00000_0000': 'octdec']
+batch_names = [ '000000_D00000_0000': 'univin']
 
 
 // Locations and parameters
@@ -43,9 +43,11 @@ STAR_index_dir = WS_ref_dir + "/star_index_2-7-7a/"
 
 // -------- Prepare channels for input and output --------
 batch_dirs = batch_names.keySet().collect { "${params.root_dir}/${it}/Sample_*" }
-sample_dir = Channel.fromPath( batch_dirs, type: 'dir' ).map {it ->
-	(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]
-}
+Channel
+	.fromPath( batch_dirs, type: 'dir' )
+	.map {it ->
+		(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]}
+	.into{sample_dir; sample_dir_for_init}
 
 
 // count nb of Samples in each batch
@@ -65,7 +67,9 @@ for( i=0; i<batch_names.size(); i++){
         sample_suffixes_list.add(batch_names.values()[i])
     }
 }
-sample_suffix = Channel.fromList(sample_suffixes_list)
+Channel
+	.fromList(sample_suffixes_list)
+	.into{sample_suffix; sample_suffix_for_init}
 
 
 
@@ -122,6 +126,44 @@ process testEverything{
 	fi
 	'''
 }
+
+process initialize_db_entry{
+	cpus '1'
+	time '10m'
+	memory '100MB'
+	cache false
+	
+	input:
+	  tuple path(sample_dir), val(batch), val(sample) from sample_dir_for_init
+	  val sample_suffix_for_init
+	
+	shell:
+	'''
+		
+	sql_command="INSERT INTO alig3
+		SET alig_lib_id		= '!{sample}!{sample_suffix_for_init}',
+		    alig_pid		= '!{script_version}',
+		    alig_sequ_batch	= '!{batch}',
+		    alig_completed	= '0',
+		    alig_date		= '"$(date +%F)"',
+		    alig_lab		= 'MH',
+		    alig_by		= '"$(echo $USER)"',
+		    alig_reference_type = 'genome',
+		    alig_reference_source = 'Wormbase',
+		    alig_reference_version = '!{params.WSversion}',
+		    alig_software	   = 'STAR',
+		    alig_software_version  = '2.7.7a';"
+			
+			
+	source ~/.cengen_database.id
+	mysql --host=23.229.215.131 \
+		--user=$username \
+		--password=$password \
+		--database=test_cengen \
+		--execute="$sql_command"
+	'''
+}
+
 
 process merge{
 	cpus '1'
@@ -392,26 +434,6 @@ process save_logs{
 	bam_stats=$(samtools flagstat dedup.sorted.dedup.bam)
 	
 	
-	regex="([[:digit:]]+) \\+ 0 in total \\(QC-passed reads \\+ QC-failed reads\\)\\
-([[:digit:]]+) \\+ 0 secondary\\
-([[:digit:]]+) \\+ 0 supplementary\\
-([[:digit:]]+) \\+ 0 duplicates\\
-([[:digit:]]+) \\+ 0 mapped \\([[:digit:].]+% : N/A\\)\\
-([[:digit:]]+) \\+ 0 paired in sequencing\\
-[[:digit:]]+ \\+ 0 read1\\
-[[:digit:]]+ \\+ 0 read2\\
-([[:digit:]]+) \\+ 0 properly paired \\([[:digit:].]+% : N/A\\)\\
-([[:digit:]]+) \\+ 0 with itself and mate mapped\\
-0 \\+ 0 singletons \\([[:digit:].]+% : N/A\\)\\
-0 \\+ 0 with mate mapped to a different chr\\
-0 \\+ 0 with mate mapped to a different chr \\(mapQ>=5\\)"
-	
-	
-	
-	
-	regex="([[:digit:]]+) \\+ 0 in total \\(QC-passed reads \\+ QC-failed reads\\) ([[:digit:]]+) \\+ 0 secondary ([[:digit:]]+) \\+ 0 supplementary ([[:digit:]]+) \\+ 0 duplicates ([[:digit:]]+) \\+ 0 mapped \\([[:digit:].]+% : N/A\\) ([[:digit:]]+) \\+ 0 paired in sequencing [[:digit:]]+ \\+ 0 read1 [[:digit:]]+ \\+ 0 read2 ([[:digit:]]+) \\+ 0 properly paired \\([[:digit:].]+% : N/A\\) ([[:digit:]]+) \\+ 0 with itself and mate mapped 0 \\+ 0 singletons \\([[:digit:].]+% : N/A\\) 0 \\+ 0 with mate mapped to a different chr 0 \\+ 0 with mate mapped to a different chr \\(mapQ>=5\\)"
-
-
 	regex="([[:digit:]]+) \\+ 0 in total \\(QC-passed reads \\+ QC-failed reads\\)[\n ]+([[:digit:]]+) \\+ 0 secondary[\n ]+([[:digit:]]+) \\+ 0 supplementary[\n ]+([[:digit:]]+) \\+ 0 duplicates[\n ]+([[:digit:]]+) \\+ 0 mapped \\([[:digit:].]+% : N/A\\)[\n ]+([[:digit:]]+) \\+ 0 paired in sequencing[\n ]+[[:digit:]]+ \\+ 0 read1[\n ]+[[:digit:]]+ \\+ 0 read2[\n ]+([[:digit:]]+) \\+ 0 properly paired \\([[:digit:].]+% : N/A\\)[\n ]+([[:digit:]]+) \\+ 0 with itself and mate mapped[\n ]+0 \\+ 0 singletons \\([[:digit:].]+% : N/A\\)[\n ]+0 \\+ 0 with mate mapped to a different chr[\n ]+0 \\+ 0 with mate mapped to a different chr \\(mapQ>=5\\)"
 
 	if [[ $bam_stats =~ $regex ]]
@@ -426,8 +448,8 @@ process save_logs{
 	else
 		echo "ERROR -- Could not read flagstat correctly. Final statistics incorrect" >> sample.log
 		echo  			>> sample.log
-		echo "Content:" >> sample.log
-		echo $bam_stats >> sample.log
+		echo "Content:" 	>> sample.log
+		echo $bam_stats 	>> sample.log
 		echo  			>> sample.log
 	fi
 	
@@ -481,14 +503,63 @@ process save_logs{
 		quality_check=1
 	fi
 
-
-	sql_command="INSERT INTO alig2 (alig_lib_id, alig_pid, alig_sequ_batch, alig_date, alig_lab, alig_by, alig_line, alig_neurons, alig_reference_type, alig_reference_source, alig_reference_version, alig_software, alig_software_version, alig_aligned_reads, alig_quality_check,
-	alig_merged_reads, alig_bbduk_input, alig_bbduk_removed, alig_bbduk_result,
-	alig_star_input,alig_star_unique, alig_star_multi, alig_nudup_input, alig_nudup_pos_dup, alig_nudup_umi_dup,
-	alig_final_total, alig_final_secondary, alig_final_supplementary, alig_final_duplicates, alig_final_mapped, alig_final_paired, alig_final_properly_paired,
-	alig_comments)
-	VALUES ('"$sample"', '!{script_version}', '!{batch}', '"$(date +%F)"', 'MH', '"$(echo $USER)"', '', '', 'genome', 'Wormbase', '!{params.WSversion}', 'STAR', '"2.7.7a"', '"$(($star_unique_maps+$star_multi_maps))"', '', '"$cnt_r1"', '"$bbduk_input"', '"$bbduk_removed"', '"$bbduk_result"', '"$star_input"', '"$star_unique_maps"', '"$star_multi_maps"', '"$nudup_input"', '"$nudup_pos_dup"', '"$nudup_umi_dup"', '"$final_total"', '"$final_secondary"', '"$final_supplementary"', '"$final_duplicates"', '"$final_mapped"', '"$final_paired"', '"$final_properly_paired"', '');"
 	
+	# Get FASTQC results
+	arr1=($(cat R1_fastqc | cut -f1))
+	arr2=($(cat R2_fastqc | cut -f1))
+
+	worst_of (){
+		if [ $1 == "FAIL"  ] || [ $2 == "FAIL" ]
+		then
+			echo "FAIL"
+		elif [ $1 == "WARN" ] || [ $2 == "WARN" ]
+		then
+			echo "WARN"
+		else
+			echo "PASS"
+		fi
+	}
+
+
+
+	comments=""
+	
+	
+	sql_command="UPDATE alig3
+	  SET	alig_completed			= '1',
+		alig_aligned_reads	 	= '"$(($star_unique_maps+$star_multi_maps))"',
+		alig_merged_reads		= '"$cnt_r1"',
+		alig_fqc_basic_stats		= '$(worst_of ${arr1[0]} ${arr2[0]})',
+		alig_fqc_per_base_quality	= '$(worst_of ${arr1[1]} ${arr2[1]})',
+		alig_fqc_per_tile_quality	= '$(worst_of ${arr1[2]} ${arr2[2]})',
+		alig_fqc_per_seq_scores		= '$(worst_of ${arr1[3]} ${arr2[3]})',
+		alig_fqc_per_base_seq_content	= '$(worst_of ${arr1[4]} ${arr2[4]})',
+		alig_fqc_per_base_gc		= '$(worst_of ${arr1[5]} ${arr2[5]})',
+		alig_fqc_per_base_n		= '$(worst_of ${arr1[6]} ${arr2[6]})',
+		alig_fqc_seq_length		= '$(worst_of ${arr1[7]} ${arr2[7]})',
+		alig_fqc_duplication		= '$(worst_of ${arr1[8]} ${arr2[8]})',
+		alig_fqc_overrepresented_seq	= '$(worst_of ${arr1[9]} ${arr2[9]})',
+		alig_fqc_adapter_content	= '$(worst_of ${arr1[10]} ${arr2[10]})',
+		alig_bbduk_input		= '"$bbduk_input"',
+		alig_bbduk_removed		= '"$bbduk_removed"',
+		alig_bbduk_result		= '"$bbduk_result"',
+		alig_star_input			= '"$star_input"',
+		alig_star_unique		= '"$star_unique_maps"',
+		alig_star_multi			= '"$star_multi_maps"',
+		alig_nudup_input		= '"$nudup_input"',
+		alig_nudup_pos_dup		= '"$nudup_pos_dup"',
+		alig_nudup_umi_dup		= '"$nudup_umi_dup"',
+		alig_final_total		= '"$final_total"',
+		alig_final_secondary		= '"$final_secondary"',
+		alig_final_supplementary	= '"$final_supplementary"',
+		alig_final_duplicates		= '"$final_duplicates"',
+		alig_final_mapped		= '"$final_mapped"',
+		alig_final_paired		= '"$final_paired"',
+		alig_final_properly_paired	= '"$final_properly_paired"',
+		alig_comments			= '"$comments"'
+	  WHERE alig_lib_id     = '"$sample"' AND
+		alig_pid        = '!{script_version}' AND
+		alig_sequ_batch = '!{batch}';"
 	
 	source ~/.cengen_database.id
 	mysql --host=23.229.215.131 \
@@ -502,6 +573,7 @@ process save_logs{
 	echo "Finished."
 	'''
 }
+
 
 
 
