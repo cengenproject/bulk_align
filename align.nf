@@ -9,7 +9,7 @@
 				'201022_D00306_1322': 't1',
 				'201022_D00306_1323': 't2']*/
 
-batch_names = [ '000000_D00000_0000': 'quaddec']
+batch_names = [ '000000_D00000_0000': 'sixdec']
 
 
 // Locations and parameters
@@ -164,7 +164,7 @@ process merge{
 }
 
 
-merged_paths.into{ merged_paths_to_align; merged_paths_for_qc }
+merged_paths.into{ merged_paths_to_align; merged_paths_for_qc; merged_paths_for_logs }
 
 process qc{
 	cpus '2'
@@ -174,18 +174,18 @@ process qc{
 	module 'FastQC'
 	
 	input:
-        tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_qc
+          tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_qc
 
-        output:
+	output:
           tuple path('merged_R1_fastqc/summary.txt'), path('merged_R2_fastqc/summary.txt') into fastqc_summaries
-	  path('merged_R1_fastqc.html')
-	  path('merged_R2_fastqc.html')
+		path('merged_R1_fastqc.html')
+		path('merged_R2_fastqc.html')
 
 	publishDir mode: 'copy',
 			pattern: '*.html',
 			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version+'_logs/',
 			saveAs: {filename ->
-					read_file = (filename =~ /merged_R([12])_fastqc/)
+					read_file = (filename =~ /merged_R([12])_fastqc/)[0][1]
 					sample+sample_suffix+'_R'+read_file+'_fastqc.html'}
 
 	shell:
@@ -202,35 +202,35 @@ process align{
 	time '14d'
 	memory '15GB'
 	
-	publishDir mode: 'copy',
-			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/',
-			saveAs: { filename ->
-					def filetype = (filename =~ /.*(\.log|\.bam)$/)[0][1]
-					if(filetype == ".bam"){
-						basepath = script_version + '_bams/'
-					} else {
-						basepath = script_version + '_logs/'
-					}
-						basepath + sample + sample_suffix + filetype
-			}
-
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_to_align
-	  path('merge.log') from merge_log
-	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries
+
+	publishDir mode: 'copy',
+		pattern: '*.bam',
+		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
+		saveAs: { sample + sample_suffix + '.bam' }
+	
+	publishDir mode: 'copy',
+		pattern: '*_Log.final.out',
+		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_logs/',
+		saveAs: { sample + sample_suffix + '_STAR_stats.log'}
+	
+	publishDir mode: 'copy',
+		pattern: '*_Log.out',
+		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_logs/',
+		saveAs: { sample + sample_suffix + '_STAR.log'}
+	
 	
 	output:
-	  path "dedup.sorted.dedup.bam"
-	  path "sample.log"
+	  path "aligned_Log.final.out" into star_align_log_stats
+	  path "aligned_Log.out"
+	  tuple path("bbduk.log"), path("star.log"), path("nudup.log"), path("dedup_dup_log.txt") into alignment_logs
+	  path "dedup.sorted.dedup.bam" into aligned_bam
 	
 	shell:
 	'''
 
-
-	echo "------------------------------------------------------------------------------------------"
 	echo "------------------------------- BBduk clipping of adaptors -------------------------------"
-	echo "------------------------------------------------------------------------------------------"
-	#module load BBMap/37.17-foss-2016a-Java-1.8.0_121
 	module load BBMap/38.90-GCCcore-10.2.0
 
 
@@ -242,12 +242,9 @@ process align{
 		 ref="/ycga-gpfs/apps/hpc/software/Trimmomatic/0.39-Java-1.8/adapters/TruSeq3-PE.fa" \
 		 ktrim=r k=23 mink=11 hdist=1 tpe tbo >> bbduk.log 2>&1
 
-	echo "------------------------------------------------------------------------------------------"
 	echo "------------------------------------- STAR alignment -------------------------------------"
-	echo "------------------------------------------------------------------------------------------"
 	module -q swap BBMap STAR/2.7.7a-GCCcore-10.2.0
 
-	star_version=$(STAR --version)
 
 	echo "Using STAR version $(STAR --version)"
 	echo "Using STAR version $(STAR --version)" >> star.log
@@ -263,10 +260,7 @@ process align{
 		--outSAMattributes Standard \
 		--outFilterMatchNminOverLread 0.3 >> star.log
 
-	echo "------------------------------------------------------------------------------------------"
 	echo "------------------------------------- Deduplications -------------------------------------"
-	echo "------------------------------------------------------------------------------------------"
-
 
 	module -q swap STAR SAMtools/1.11-GCCcore-10.2.0
 	
@@ -276,12 +270,36 @@ process align{
 			 --length 8 \
 			 -o dedup \
 			 aligned_Aligned.sortedByCoord.out.bam >> nudup.log
+	'''
+}
+
+process save_logs{
 	
+	cpus '1'
+	time '1d'
+	memory '1GB'
 	
+	module 'SAMtools'
+	
+	input:
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_logs
+	  path('merge.log') from merge_log
+	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries
+	  tuple path("bbduk.log"), path("star.log"), path("nudup.log"), path("dedup_dup_log.txt") from alignment_logs
+	  path "dedup.sorted.dedup.bam" from aligned_bam
+	  path "aligned_Log.final.out" from star_align_log_stats
+	
+	publishDir mode: 'copy',
+		pattern: 'sample.log',
+		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_logs/',
+		saveAs: { sample + sample_suffix + '.log'}
 
+	output:
+	  path "sample.log"
+	  
 
-
-
+	shell:
+	'''
 	echo "##########################################################################################"
 	echo "###################     Reading quality metrics and full log file   ######################"
 	echo "##########################################################################################"
@@ -454,7 +472,7 @@ process align{
 	alig_star_input,alig_star_unique, alig_star_multi, alig_nudup_input, alig_nudup_pos_dup, alig_nudup_umi_dup,
 	alig_final_total, alig_final_secondary, alig_final_supplementary, alig_final_duplicates, alig_final_mapped, alig_final_paired, alig_final_properly_paired,
 	alig_comments)
-	VALUES ('"$sample"', '!{script_version}', '!{batch}', '"$(date +%F)"', 'MH', '"$(echo $USER)"', '', '', 'genome', 'Wormbase', '!{params.WSversion}', 'STAR', '"$star_version"', '"$(($star_unique_maps+$star_multi_maps))"', '', '"$cnt_r1"', '"$bbduk_input"', '"$bbduk_removed"', '"$bbduk_result"', '"$star_input"', '"$star_unique_maps"', '"$star_multi_maps"', '"$nudup_input"', '"$nudup_pos_dup"', '"$nudup_umi_dup"', '"$final_total"', '"$final_secondary"', '"$final_supplementary"', '"$final_duplicates"', '"$final_mapped"', '"$final_paired"', '"$final_properly_paired"', '');"
+	VALUES ('"$sample"', '!{script_version}', '!{batch}', '"$(date +%F)"', 'MH', '"$(echo $USER)"', '', '', 'genome', 'Wormbase', '!{params.WSversion}', 'STAR', '"2.7.7a"', '"$(($star_unique_maps+$star_multi_maps))"', '', '"$cnt_r1"', '"$bbduk_input"', '"$bbduk_removed"', '"$bbduk_result"', '"$star_input"', '"$star_unique_maps"', '"$star_multi_maps"', '"$nudup_input"', '"$nudup_pos_dup"', '"$nudup_umi_dup"', '"$final_total"', '"$final_secondary"', '"$final_supplementary"', '"$final_duplicates"', '"$final_mapped"', '"$final_paired"', '"$final_properly_paired"', '');"
 	
 	
 	source ~/.cengen_database.id
@@ -469,6 +487,7 @@ process align{
 	echo "Finished."
 	'''
 }
+
 
 
 
