@@ -9,7 +9,7 @@
 				'201022_D00306_1322': 't1',
 				'201022_D00306_1323': 't2']*/
 
-batch_names = [ '000000_D00000_0000': 'sept']
+batch_names = [ '000000_D00000_0000': 'quaddec']
 
 
 // Locations and parameters
@@ -134,7 +134,8 @@ process merge{
 	  val sample_suffix
 
 	output:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix), path('merge.log') into merged_paths
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths
+	  path('merge.log') into merge_log
 	
 	shell:
 	'''
@@ -160,9 +161,40 @@ process merge{
 	echo "------ Merged reads: $cnt_r1 ------"	
 	echo
 	'''
+}
 
+
+merged_paths.into{ merged_paths_to_align; merged_paths_for_qc }
+
+process qc{
+	cpus '2'
+	time '2h'
+	memory '10GB'
+
+	module 'FastQC'
+	
+	input:
+        tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_qc
+
+        output:
+          tuple path('merged_R1_fastqc/summary.txt'), path('merged_R2_fastqc/summary.txt') into fastqc_summaries
+	  path('merged_R1_fastqc.html')
+	  path('merged_R2_fastqc.html')
+
+	publishDir mode: 'copy',
+			pattern: '*.html',
+			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version+'_logs/',
+			saveAs: {filename ->
+					read_file = (filename =~ /merged_R([12])_fastqc/)
+					sample+sample_suffix+'_R'+read_file+'_fastqc.html'}
+
+	shell:
+        '''
+        fastqc --extract merged_R*
+        '''	
 
 }
+	
 
 process align{
 
@@ -170,22 +202,26 @@ process align{
 	time '14d'
 	memory '15GB'
 	
-	publishDir mode: 'copy', path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' , saveAs: { filename ->
-											def filetype = (filename =~ /.*(\.log|\.bam)$/)[0][1]
-											if(filetype == ".bam"){
-												basepath = script_version + '_bams/'
-											} else {
-												basepath = script_version + '_logs/'
-											}
-											basepath + sample + sample_suffix + filetype
-									}
+	publishDir mode: 'copy',
+			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/',
+			saveAs: { filename ->
+					def filetype = (filename =~ /.*(\.log|\.bam)$/)[0][1]
+					if(filetype == ".bam"){
+						basepath = script_version + '_bams/'
+					} else {
+						basepath = script_version + '_logs/'
+					}
+						basepath + sample + sample_suffix + filetype
+			}
 
 	input:
-	tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix), path('merge.log') from merged_paths
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_to_align
+	  path('merge.log') from merge_log
+	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries
 	
 	output:
-	path "dedup.sorted.dedup.bam"
-	path "sample.log"
+	  path "dedup.sorted.dedup.bam"
+	  path "sample.log"
 	
 	shell:
 	'''
