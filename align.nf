@@ -47,11 +47,9 @@ STAR_index_dir = WS_ref_dir + "/star_index_2-7-7a/"
 
 // -------- Prepare channels for input and output --------
 batch_dirs = batch_names.keySet().collect { "${params.root_dir}/${it}/Sample_*" }
-Channel
-	.fromPath( batch_dirs, type: 'dir' )
+sample_dir_for_init = Channel.fromPath( batch_dirs, type: 'dir' )
 	.map {it ->
 		(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]}
-	.into{sample_dir; sample_dir_for_init}
 
 
 // count nb of Samples in each batch
@@ -71,9 +69,8 @@ for( i=0; i<batch_names.size(); i++){
         sample_suffixes_list.add(batch_names.values()[i])
     }
 }
-Channel
-	.fromList(sample_suffixes_list)
-	.into{sample_suffix; sample_suffix_for_init}
+
+sample_suffix_for_init = Channel.fromList(sample_suffixes_list)
 
 
 
@@ -138,33 +135,76 @@ process initialize_db_entry{
 	cache false
 	
 	input:
+	  val tested_successfully
 	  tuple path(sample_dir), val(batch), val(sample) from sample_dir_for_init
 	  val sample_suffix_for_init
 	
+	output:
+	  env ready_to_process
+	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix) into sample_dir_for_merge
+	
 	shell:
 	'''
-		
-	sql_command="INSERT INTO alig
-		SET alig_lib_id		= '!{sample}!{sample_suffix_for_init}',
-		    alig_pid		= '!{script_version}',
-		    alig_sequ_batch	= '!{batch}',
-		    alig_completed	= '0',
-		    alig_date		= '"$(date +%F)"',
-		    alig_lab		= 'MH',
-		    alig_by		= '"$(echo $USER)"',
-		    alig_reference_type = 'genome',
-		    alig_reference_source = 'Wormbase',
-		    alig_reference_version = '!{params.WSversion}',
-		    alig_software	   = 'STAR',
-		    alig_software_version  = '2.7.7a';"
-			
-			
+	
 	source ~/.cengen_database.id
-	mysql --host=23.229.215.131 \
-		--user=$username \
-		--password=$password \
-		--database=cengen \
-		--execute="$sql_command"
+	
+	
+	# First check if sample was already succesfully processed
+	sql_command="SELECT alig_completed FROM alig
+		WHERE alig_lib_id		= '!{sample}!{sample_suffix_for_init}' AND
+		    alig_pid		= '!{script_version}' AND
+		    alig_sequ_batch	= '!{batch}';"
+			
+			
+	existing=$(mysql --host=23.229.215.131 \
+					--user=$username \
+					--password=$password \
+					--database=cengen \
+					--execute="$sql_command" \
+					--silent --raw)
+	
+	
+	
+	if [[ -z "$existing" ]]
+	then
+		
+		ready_to_process=1
+		
+		echo "New sample, will process: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
+		
+		sql_command="INSERT INTO alig
+			SET alig_lib_id		= '!{sample}!{sample_suffix_for_init}',
+				alig_pid		= '!{script_version}',
+				alig_sequ_batch	= '!{batch}',
+				alig_completed	= '0',
+				alig_date		= '"$(date +%F)"',
+				alig_lab		= 'MH',
+				alig_by		= '"$(echo $USER)"',
+				alig_reference_type = 'genome',
+				alig_reference_source = 'Wormbase',
+				alig_reference_version = '!{params.WSversion}',
+				alig_software	   = 'STAR',
+				alig_software_version  = '2.7.7a';"
+
+		mysql --host=23.229.215.131 \
+			--user=$username \
+			--password=$password \
+			--database=cengen \
+			--execute="$sql_command"
+		
+	elif [[ $(echo "$existing" | wc -l) -gt 1 ]]
+	then
+		echo "Potential error: several entries already exist!"
+		exit 1
+	elif [[ $existing == 0]]
+	then
+		ready_to_process=1
+		echo "Sample already exists, but unfinished. Will reprocess: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
+	else
+		ready_to_process=0
+		echo "Sample already processed (completed=$existing ), will be ignored: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
+	fi
+	
 	'''
 }
 
@@ -175,10 +215,12 @@ process merge{
 	memory '15GB'
 
 	input:
-	  val tested_successfully
-	  tuple path(sample_dir), val(batch), val(sample) from sample_dir
-	  val sample_suffix
-
+	  val ready_to_process
+	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix) from sample_dir_for_merge
+	
+	when:
+		ready_to_process
+	
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths
 	  path('merge.log') into merge_log
@@ -220,12 +262,12 @@ process qc{
 	module 'FastQC'
 	
 	input:
-          tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_qc
+      tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_qc
 
 	output:
-          tuple path('merged_R1_fastqc/summary.txt'), path('merged_R2_fastqc/summary.txt') into fastqc_summaries
-		path('merged_R1_fastqc.html')
-		path('merged_R2_fastqc.html')
+      tuple path('merged_R1_fastqc/summary.txt'), path('merged_R2_fastqc/summary.txt') into fastqc_summaries
+	  path('merged_R1_fastqc.html')
+	  path('merged_R2_fastqc.html')
 
 	publishDir mode: 'copy',
 			pattern: '*.html',
@@ -247,6 +289,9 @@ process align{
 	cpus '10'
 	time '14d'
 	memory '15GB'
+	
+	errorStrategy 'ignore'
+	
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_to_align
