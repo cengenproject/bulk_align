@@ -1,3 +1,12 @@
+# Introduction
+
+This is the workflow to process all sequencing data (obtained from the YCGA sequencing core), to obtain bam, SJ counts and gene coutns, along with useful information uploaded to the database. In addition, a number of log files are deposited in the corresponding directory, for further examination of samples that fail or display weird results.
+
+![nextflow_dag](DAG.svg)
+
+
+
+
 # Prerequisites
 
 Install [Nextflow](www.nextflow.io).
