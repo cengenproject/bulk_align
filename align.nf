@@ -134,6 +134,9 @@ process initialize_db_entry{
 	memory '100MB'
 	cache false
 	
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
+	maxRetries 3
+	
 	input:
 	  val tested_successfully
 	  tuple path(sample_dir), val(batch), val(sample) from sample_dir_for_init
@@ -141,7 +144,7 @@ process initialize_db_entry{
 	
 	output:
 	  env ready_to_process
-	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix) into sample_dir_for_merge
+	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix_for_init) into sample_dir_for_merge
 	
 	shell:
 	'''
@@ -196,7 +199,7 @@ process initialize_db_entry{
 	then
 		echo "Potential error: several entries already exist!"
 		exit 1
-	elif [[ $existing == 0]]
+	elif [ "$existing" -eq 0 ]
 	then
 		ready_to_process=1
 		echo "Sample already exists, but unfinished. Will reprocess: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
@@ -219,7 +222,7 @@ process merge{
 	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix) from sample_dir_for_merge
 	
 	when:
-		ready_to_process
+		ready_to_process == '1'
 	
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths
@@ -287,11 +290,12 @@ process qc{
 process align{
 
 	cpus '10'
-	time '14d'
+	time '7h'
 	memory '15GB'
 	
-	errorStrategy 'ignore'
 	
+	errorStrategy 'retry'
+	maxRetries 3
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_to_align
@@ -385,6 +389,8 @@ process save_logs{
 	time '1d'
 	memory '1GB'
 	
+	errorStrategy 'ignore'
+
 	module 'SAMtools'
 	
 	input:
