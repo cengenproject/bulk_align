@@ -27,7 +27,7 @@ params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
 
 // update when this script is modified
-script_version = "bsn7"
+script_version = "bsn8"
 
 
 
@@ -225,7 +225,7 @@ process merge{
 		ready_to_process == '1'
 	
 	output:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths_for_qc
 	  path('merge.log') into merge_log
 	
 	shell:
@@ -255,7 +255,6 @@ process merge{
 }
 
 
-merged_paths.into{ merged_paths_to_align; merged_paths_for_qc; merged_paths_for_logs }
 
 process qc{
 	cpus '2'
@@ -271,6 +270,7 @@ process qc{
       tuple path('merged_R1_fastqc/summary.txt'), path('merged_R2_fastqc/summary.txt') into fastqc_summaries
 	  path('merged_R1_fastqc.html')
 	  path('merged_R2_fastqc.html')
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths_to_align
 
 	publishDir mode: 'copy',
 			pattern: '*.html',
@@ -299,6 +299,8 @@ process align{
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_to_align
+	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries
+	
 
 	publishDir mode: 'copy',
 		pattern: '*.bam',
@@ -332,6 +334,8 @@ process align{
 	  tuple path("bbduk.log"), path("star.log"), path("nudup.log"), path("dedup_dup_log.txt") into alignment_logs
 	  path "dedup.sorted.dedup.bam" into aligned_bam
 	  path "aligned_SJ.out.tab"
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths_for_logs
+	  tuple path('R1_fastqc'), path('R2_fastqc') into fastqc_summaries
 	
 	shell:
 	'''
