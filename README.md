@@ -78,5 +78,6 @@ bss2: BBduk (trimming) + STAR (mapping) + SAMtools (for dedup), used for the scR
 bsn3: BBduk (trimming) + STAR (mapping) + NuDup (for dedup), but mistake preventing metadata to be uploaded to database (so, gives an error message)
 bsn4 (not used): same as bsn3, but with correct database update
 bsn5,bsn6: BBduk + STAR + NuDup, written in Nextflow, including database update and QC. These were development versions, not really used.
-bsn7: BBduk+STAR+NuDup, with junction files exported, FASTQC and saving in the "cengen" database (vs test database previously).
+bsn7: BBduk+STAR+NuDup, with junction files exported, FASTQC and saving in the "cengen" database (vs test database previously). Note: the QC and alignements being processed in parallel resulted in a mixing of samples: the names of the publishDir files were incorrect.
+bsn8: qc and alignment done successively to keep sample names.
 

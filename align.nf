@@ -335,7 +335,7 @@ process align{
 	  path "dedup.sorted.dedup.bam" into aligned_bam
 	  path "aligned_SJ.out.tab"
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths_for_logs
-	  tuple path('R1_fastqc'), path('R2_fastqc') into fastqc_summaries
+	  tuple path('R1_fastqc'), path('R2_fastqc') into fastqc_summaries_fwd
 	
 	shell:
 	'''
@@ -400,7 +400,7 @@ process save_logs{
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_logs
 	  path('merge.log') from merge_log
-	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries
+	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries_fwd
 	  tuple path("bbduk.log"), path("star.log"), path("nudup.log"), path("dedup_dup_log.txt") from alignment_logs
 	  path "dedup.sorted.dedup.bam" from aligned_bam
 	  path "aligned_Log.final.out" from star_align_log_stats
