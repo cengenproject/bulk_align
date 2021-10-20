@@ -27,7 +27,7 @@ params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 
 
 // update when this script is modified
-script_version = "bsn8"
+script_version = "bsn9"
 
 
 
@@ -47,7 +47,7 @@ STAR_index_dir = WS_ref_dir + "/star_index_2-7-7a/"
 
 // -------- Prepare channels for input and output --------
 batch_dirs = batch_names.keySet().collect { "${params.root_dir}/${it}/Sample_*" }
-sample_dir_for_init = Channel.fromPath( batch_dirs, type: 'dir' )
+samples_dir = Channel.fromPath( batch_dirs, type: 'dir' )
 	.map {it ->
 		(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]}
 
@@ -70,7 +70,7 @@ for( i=0; i<batch_names.size(); i++){
     }
 }
 
-sample_suffix_for_init = Channel.fromList(sample_suffixes_list)
+samples_suffix = Channel.fromList(sample_suffixes_list)
 
 
 
@@ -139,12 +139,12 @@ process initialize_db_entry{
 	
 	input:
 	  val tested_successfully
-	  tuple path(sample_dir), val(batch), val(sample) from sample_dir_for_init
-	  val sample_suffix_for_init
+	  tuple path(sample_dir), val(batch), val(sample) from samples_dir
+	  val sample_suffix from samples_suffix
 	
 	output:
 	  env ready_to_process
-	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix_for_init) into sample_dir_for_merge
+	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix) into samples_pinit
 	
 	shell:
 	'''
@@ -154,7 +154,7 @@ process initialize_db_entry{
 	
 	# First check if sample was already succesfully processed
 	sql_command="SELECT alig_completed FROM alig
-		WHERE alig_lib_id		= '!{sample}!{sample_suffix_for_init}' AND
+		WHERE alig_lib_id		= '!{sample}!{sample_suffix}' AND
 		    alig_pid		= '!{script_version}' AND
 		    alig_sequ_batch	= '!{batch}';"
 			
@@ -176,7 +176,7 @@ process initialize_db_entry{
 		echo "New sample, will process: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
 		
 		sql_command="INSERT INTO alig
-			SET alig_lib_id		= '!{sample}!{sample_suffix_for_init}',
+			SET alig_lib_id		= '!{sample}!{sample_suffix}',
 				alig_pid		= '!{script_version}',
 				alig_sequ_batch	= '!{batch}',
 				alig_completed	= '0',
@@ -219,14 +219,14 @@ process merge{
 
 	input:
 	  val ready_to_process
-	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix) from sample_dir_for_merge
+	  tuple path(sample_dir), val(batch), val(sample), val(sample_suffix) from samples_pinit
 	
 	when:
 		ready_to_process == '1'
 	
 	output:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths_for_qc
-	  path('merge.log') into merge_log
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into samples_pmerge
+	  tuple path('merge.log'), env(cnt_r1) into logs_pmerge
 	
 	shell:
 	'''
@@ -243,14 +243,26 @@ process merge{
 	# Trim the index to 8 bp for NuDup
 	zcat merged_I1.fastq.gz | awk 'NR%4 == 1 {print} NR%4 == 2 {print substr($0, 0, 8)} NR%4 == 3 {print} NR%4 == 0 {print substr($0,0,8)}' > trimmed_I1.fq
 	
-	cnt_r1=$(zcat merged_R1.fastq.gz | wc -l)
+	
 
+	# Check nb of reads after merge 
+	cnt_r1=$(zcat merged_R1.fastq.gz | wc -l)
+	cnt_r2=$(zcat merged_R2.fastq.gz | wc -l)
+	cnt_i1=$(cat trimmed_I1.fq | wc -l)
+	
+	if [ $cnt_r1 -ne $cnt_r2 -o $cnt_r1 -ne $cnt_i1 ]
+	then
+		echo "Error: number of reads in the R1/R2/I1 files do not match." >> merge.log
+		echo "R1: $cnt_r1" >> merge.log
+		echo "R2: $cnt_r2" >> merge.log
+		echo "I1: $cnt_i1" >> merge.log
+		exit 1
+	fi
+	
 	echo "Merged reads: $cnt_r1" >> merge.log
 	echo >> merge.log
 	echo >> merge.log
-
-	echo "------ Merged reads: $cnt_r1 ------"	
-	echo
+	
 	'''
 }
 
@@ -264,13 +276,14 @@ process qc{
 	module 'FastQC'
 	
 	input:
-      tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_qc
+      tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from samples_pmerge
+	  tuple path('merge.log'), val(merge_count) from logs_pmerge
 
 	output:
-      tuple path('merged_R1_fastqc/summary.txt'), path('merged_R2_fastqc/summary.txt') into fastqc_summaries
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into samples_pqc
+	  tuple path('merge.log'), val(merge_count), path('merged_R1_fastqc/summary.txt'), path('merged_R2_fastqc/summary.txt') into logs_pqc
 	  path('merged_R1_fastqc.html')
 	  path('merged_R2_fastqc.html')
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths_to_align
 
 	publishDir mode: 'copy',
 			pattern: '*.html',
@@ -280,42 +293,64 @@ process qc{
 					sample+sample_suffix+'_R'+read_file+'_fastqc.html'}
 
 	shell:
-        '''
-        fastqc --extract --threads $SLURM_CPUS_PER_TASK merged_R*
-        '''	
+	'''
+	fastqc --extract --threads $SLURM_CPUS_PER_TASK merged_R*
+	'''	
 
 }
-	
 
-process align{
-
-	cpus '10'
-	time '7h'
-	memory '15GB'
-	
-	
-	errorStrategy 'retry'
-	maxRetries 3
+process trim{
+	cpus 1
+	time '2h'
+	memory '10GB'
+	module BBMap/38.90-GCCcore-10.2.0
 	
 	input:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_to_align
-	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from samples_pqc
+	  tuple path('merge.log'), val(merge_count), path('R1_fastqc'), path('R2_fastqc') from logs_pqc
 	
+	
+	output:
+	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into samples_ptrim
+	  tuple path('merge.log'), val(merge_count), path('R1_fastqc'), path('R2_fastqc'), path("bbduk.log") into logs_ptrim
+	
+	
+	shell:
+	'''
+	# weirdly, BBduk puts the log in stderr
+	
+	bbduk.sh in1=merged_R1.fastq.gz \
+		 in2=merged_R2.fastq.gz \
+		 out1=trimmed_R1.fastq.gz \
+		 out2=trimmed_R2.fastq.gz \
+		 ref="/ycga-gpfs/apps/hpc/software/Trimmomatic/0.39-Java-1.8/adapters/TruSeq3-PE.fa" \
+		 ktrim=r k=23 mink=11 hdist=1 tpe tbo >> bbduk.log 2>&1
+	'''
+}
 
-	publishDir mode: 'copy',
-		pattern: '*.bam',
-		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
-		saveAs: { sample + sample_suffix + '.bam' }
+process align_first{
+	cpus 10
+	time '5h'
+	memory '15GB'
+	module STAR/2.7.7a-GCCcore-10.2.0
+	
+	
+	input:
+	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from samples_ptrim
+	  tuple path('merge.log'), val(merge_count), path('R1_fastqc'), path('R2_fastqc'), path("bbduk.log") from logs_ptrim
+	
+	output:
+	  tuple path("aligned_Aligned.sortedByCoord.out.bam"), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into samples_palign_first
+	  tuple path('merge.log'), val(merge_count), path('R1_fastqc'), path('R2_fastqc'), path("bbduk.log"), path("aligned_Log.final.out"), path("aligned_Log.out"), path("star.log") into logs_palign_first
+	  path("aligned_SJ.out.tab")
+	  path("aligned_Log*")
+	
 	
 	publishDir mode: 'copy',
-                pattern: '*_SJ.out.tab',
-                path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_junctions/',
-                saveAs: { sample + sample_suffix + '.SJ.tab' }
+		pattern: '*_SJ.out.tab',
+		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_junctions/',
+		saveAs: { sample + sample_suffix + '.SJ.tab' }
 	
-	publishDir mode: 'copy',
-                pattern: '*.bam.bai',
-                path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
-                saveAs: { sample + sample_suffix + '.bam.bai' }
 	
 	publishDir mode: 'copy',
 		pattern: '*_Log.final.out',
@@ -328,37 +363,8 @@ process align{
 		saveAs: { sample + sample_suffix + '_STAR.log'}
 	
 	
-	output:
-	  path "aligned_Log.final.out" into star_align_log_stats
-	  path "aligned_Log.out"
-	  tuple path("bbduk.log"), path("star.log"), path("nudup.log"), path("dedup_dup_log.txt") into alignment_logs
-	  path "dedup.sorted.dedup.bam" into aligned_bam
-	  path "aligned_SJ.out.tab"
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) into merged_paths_for_logs
-	  tuple path('R1_fastqc'), path('R2_fastqc') into fastqc_summaries_fwd
-	
 	shell:
 	'''
-
-	echo "------------------------------- BBduk clipping of adaptors -------------------------------"
-	module load BBMap/38.90-GCCcore-10.2.0
-
-
-	# weirdly, BBduk puts the log in stderr
-	bbduk.sh in1=merged_R1.fastq.gz \
-		 in2=merged_R2.fastq.gz \
-		 out1=trimmed_R1.fastq.gz \
-		 out2=trimmed_R2.fastq.gz \
-		 ref="/ycga-gpfs/apps/hpc/software/Trimmomatic/0.39-Java-1.8/adapters/TruSeq3-PE.fa" \
-		 ktrim=r k=23 mink=11 hdist=1 tpe tbo >> bbduk.log 2>&1
-
-	echo "------------------------------------- STAR alignment -------------------------------------"
-	module -q swap BBMap STAR/2.7.7a-GCCcore-10.2.0
-
-
-	echo "Using STAR version $(STAR --version)"
-	echo "Using STAR version $(STAR --version)" >> star.log
-	
 	STAR --runThreadN $SLURM_CPUS_PER_TASK \
 		--genomeDir !{STAR_index_dir} \
 		--readFilesIn trimmed_R1.fastq.gz trimmed_R2.fastq.gz \
@@ -369,57 +375,84 @@ process align{
 		--outSAMunmapped Within \
 		--outSAMattributes Standard \
 		--outFilterMatchNminOverLread 0.3 >> star.log
-
-	echo "------------------------------------- Deduplications -------------------------------------"
-
-	module -q swap STAR SAMtools/1.11-GCCcore-10.2.0
 	
+	'''	
+}
+
+process dedup{
+	cpus 1
+	time '3h'
+	memory '10GB'
+	module SAMtools/1.11-GCCcore-10.2.0
+	
+	errorStrategy 'retry'
+	maxRetries 3
+	
+	
+	input:
+	  tuple path("aligned.bam"), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from samples_palign_first
+	  tuple path('merge.log'), val(merge_count), path('R1_fastqc'), path('R2_fastqc'), path("bbduk.log"), path("aligned_Log.final.out"), path("aligned_Log.out"), path("star.log") from logs_palign_first
+	
+	output:
+	  tuple path("dedup.sorted.dedup.bam"), val(sample), val(batch), val(sample_suffix) into samples_pdedup
+	  tuple path('merge.log'), val(merge_count), path('R1_fastqc'), path('R2_fastqc'), path("bbduk.log"), path("aligned_Log.final.out"), path("aligned_Log.out"), path("star.log"), path("nudup.log"),     path("dedup_dup_log.txt") into logs_pdedup
+	  path "dedup.sorted.dedup.bam*"
+	
+	
+	publishDir mode: 'copy',
+		pattern: '*.bam',
+		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
+		saveAs: { sample + sample_suffix + '.bam' }
+	
+	publishDir mode: 'copy',
+                pattern: '*.bam.bai',
+                path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
+                saveAs: { sample + sample_suffix + '.bam.bai' }
+	
+	
+	shell:
+	'''	
 	nudup.py --paired-end \
 			 -f trimmed_I1.fq \
 			 --start 8 \
 			 --length 8 \
 			 -o dedup \
-			 aligned_Aligned.sortedByCoord.out.bam >> nudup.log
-
-	echo "------------------------------------- BAM indexing --------------------------------------"
-	samtools index -@ $SLURM_CPUS_PER_TASK dedup.sorted.dedup.bam
+			 aligned.bam >> nudup.log
 	
+	samtools index -@ $SLURM_CPUS_PER_TASK dedup.sorted.dedup.bam
 	'''
 }
 
+
+
+
 process save_logs{
-	
 	cpus '1'
-	time '1d'
+	time '1h'
 	memory '1GB'
 	
-	errorStrategy 'ignore'
+	errorStrategy 'retry'
+	maxRetries 3
 
 	module 'SAMtools'
 	
 	input:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from merged_paths_for_logs
-	  path('merge.log') from merge_log
-	  tuple path('R1_fastqc'), path('R2_fastqc') from fastqc_summaries_fwd
-	  tuple path("bbduk.log"), path("star.log"), path("nudup.log"), path("dedup_dup_log.txt") from alignment_logs
-	  path "dedup.sorted.dedup.bam" from aligned_bam
-	  path "aligned_Log.final.out" from star_align_log_stats
+	  tuple path("dedup.bam"), val(sample), val(batch), val(sample_suffix) from samples_pdedup
+	  tuple path('merge.log'), val(merge_count), path('R1_fastqc'), path('R2_fastqc'), path("bbduk.log"), path("aligned_Log.final.out"), path("aligned_Log.out"), path("star.log"), path("nudup.log"),     path("dedup_dup_log.txt") from logs_pdedup
+	
+	output:
+	  path "sample.log"
 	
 	publishDir mode: 'copy',
 		pattern: 'sample.log',
 		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_logs/',
 		saveAs: { sample + sample_suffix + '.log'}
 
-	output:
-	  path "sample.log"
+	
 	  
 
 	shell:
 	'''
-	echo "##########################################################################################"
-	echo "###################     Reading quality metrics and full log file   ######################"
-	echo "##########################################################################################"
-	
 	
 	# Initialize Full Log
 	# Then go through each step, register warnings or errors at the beginning of log file,
@@ -427,38 +460,45 @@ process save_logs{
 	
 	sample=!{sample}!{sample_suffix}
 	
-	echo "Finished running alignment !{script_version} of sample $sample on $(date +%F)."
-	echo
-	echo "     -----     "
-	echo
+	echo "Finished running alignment !{script_version} of sample $sample on $(date +%F)." > sample.log
 	
 	
 	
-	# Nb of reads after merge 
-	cnt_r1=$(zcat merged_R1.fastq.gz | wc -l)
-	cnt_r2=$(zcat merged_R2.fastq.gz | wc -l)
-	cnt_i1=$(cat trimmed_I1.fq | wc -l)
 	
-	if [ $cnt_r1 -ne $cnt_r2 -o $cnt_r1 -ne $cnt_i1 ]
-	then
-		echo "Error: number of reads in the R1/R2/I1 files do not match." >> sample.log
-	fi
+	# register warnings
+	alig_comments=""
 	
 	
-	# ----    BBduk    ----
+	# ---- FASTQC ----
+	arr1=($(cat R1_fastqc | cut -f1))
+	arr2=($(cat R2_fastqc | cut -f1))
+
+	worst_of (){
+		if [ $1 == "FAIL"  ] || [ $2 == "FAIL" ]
+		then
+			echo "FAIL"
+		elif [ $1 == "WARN" ] || [ $2 == "WARN" ]
+		then
+			echo "WARN"
+		else
+			echo "PASS"
+		fi
+	}
+	
+	# ---- BBduk ----
 	bbduk_input=$(awk '/^Input:/{print $2}' bbduk.log)
 	bbduk_removed=$(awk '/^Total Removed:/{print $3}' bbduk.log)
 	bbduk_result=$(awk '/^Result:/{print $2}' bbduk.log)
 
 	if [ $(( $bbduk_input - $bbduk_removed )) -ne $bbduk_result ]
 	then
-		echo "Warning, BBduk number of reads don't add up for sample $sample" >> sample.log
+		alig_comments="$alig_comments -- BBduk number of reads don't add up"
 	fi
 
 	
-	if [ $cnt_r1 -ne $(( 2 * bbduk_input )) ]
+	if [ !{merge_count} -ne $(( 2 * bbduk_input )) ]
 	then
-		echo "Warning, number of reads in merge output and in BBduk input do not match" >> sample.log
+		alig_comments="$alig_comments -- number of reads in merge output and in BBduk input do not match"
 	fi
 
 	
@@ -467,28 +507,44 @@ process save_logs{
 
 	if [ ${#star_finished} -lt 1 ]
 	then
-		echo "Warning, STAR did not finish succesfully" >> sample.log
+		alig_comments="$alig_comments -- STAR did not finish successfully"
 	fi
 
 	star_input=$(awk -F "\t" '/Number of input reads/{print $2}' aligned_Log.final.out)
 	star_unique_maps=$(awk -F "\t" '/Uniquely mapped reads number/{print $2}' aligned_Log.final.out)
 	star_multi_maps=$(awk -F "\t" '/Number of reads mapped to multiple loci/{print $2}' aligned_Log.final.out)
+	star_unal_too_many_loci=$(awk -F "\t" '/Number of reads mapped to too many loci/{print $2}' aligned_Log.final.out)
+	star_unal_many_mismatches=$(awk -F "\t" '/Number of reads unmapped: too many mismatches/{print $2}' aligned_Log.final.out)
+	star_unal_too_short=$(awk -F "\t" '/Number of reads unmapped: too short/{print $2}' aligned_Log.final.out)
+	star_unal_other=$(awk -F "\t" '/Number of reads unmapped: other/{print $2}' aligned_Log.final.out)
 
 	if [ $bbduk_result -ne $(( 2 * star_input )) ]
 	then
-		echo "Warning, number of output reads from BBduk and input reads for STAR don't match" >> sample.log
+		alig_comments="$alig_comments -- number of output reads from BBduk and input reads for STAR do not match"
+	fi
+	
+	
+	if [ $star_input -ne $(( $star_unique_maps + $star_multi_maps + $star_unal_too_many_loci + $star_unal_many_mismatches +$star_unal_too_short + $star_unal_other )) ]
+	then
+		alig_comments="$alig_comments -- number of STAR reads do not match"
 	fi
 
 
 
 	# ----    NuDup    ----
 	nudup_input=$(tail -1 dedup_dup_log.txt | cut -f1)
+	nudup_unaligned=$(tail -1 dedup_dup_log.txt | cut -f2)
 	nudup_pos_dup=$(tail -1 dedup_dup_log.txt | cut -f3)
 	nudup_umi_dup=$(tail -1 dedup_dup_log.txt | cut -f5)
 	
+	if [ $nudup_unaligned -ne $(( 2 * ($star_unal_many_mismatches + $star_unal_too_many_loci + $star_unal_too_short + $star_unal_other) )) ]
+	then
+		alig_comments="$alig_comments -- number of unaligned reads do not match between STAR and NuDup"
+	fi
+	
+	
 	
 	# ----    Final counts    ----
-	#	read the index field in the output BAM file
 	
 	bam_stats=$(samtools flagstat dedup.sorted.dedup.bam)
 	
@@ -510,8 +566,13 @@ process save_logs{
 		echo "Content:" 	>> sample.log
 		echo $bam_stats 	>> sample.log
 		echo  			>> sample.log
+		alig_comments="$alig_comments -- failed to read flagstats"
 	fi
 	
+	echo                                                       >> sample.log
+	echo "$alig_comments"                                      >> sample.log
+	echo                                                       >> sample.log
+	echo  "-------------"                                      >> sample.log
 	echo                                                       >> sample.log
 	echo "Quality metrics"                                     >> sample.log
 	echo                                                       >> sample.log
@@ -544,81 +605,73 @@ process save_logs{
 
 	# Fill log file
 	echo "    ------------    Merge    ------------" >> sample.log
-	cat merge.log >> sample.log
+	cat merge.log                                    >> sample.log
+	echo "    ------------  FASTQC R1  ------------" >> sample.log
+	cat R1_fastqc                                    >> sample.log
+	echo "    ------------  FASTQC R2  ------------" >> sample.log
+	cat R2_fastqc                                    >> sample.log
 	echo "    ------------    BBduk    ------------" >> sample.log
-	cat bbduk.log >> sample.log
-	echo "    ------------    STAR    ------------" >> sample.log
-	cat star.log >> sample.log
+	cat bbduk.log                                    >> sample.log
+	echo "    ------------     STAR    ------------" >> sample.log
+	cat star.log                                     >> sample.log
+	echo "    ------------    NuDup    ------------" >> sample.log
+	cat nudup.log                                    >> sample.log
+	echo                                             >> sample.log
+	echo dedup_dup_log.txt                           >> sample.log
+	echo                                             >> sample.log
+	echo                                             >> sample.log
+
+
+
 
 
 	echo "Creating database entry" >> sample.log
 
 	
+	
+	
 
-	if [ $(( nudup_input - nudup_umi_dup )) -gt 5000000 ]
-	then
-		quality_check=0
-	else
-		quality_check=1
-	fi
+
 
 	
-	# Get FASTQC results
-	arr1=($(cat R1_fastqc | cut -f1))
-	arr2=($(cat R2_fastqc | cut -f1))
-
-	worst_of (){
-		if [ $1 == "FAIL"  ] || [ $2 == "FAIL" ]
-		then
-			echo "FAIL"
-		elif [ $1 == "WARN" ] || [ $2 == "WARN" ]
-		then
-			echo "WARN"
-		else
-			echo "PASS"
-		fi
-	}
-
-
-
-	comments=""
 	
 	
 	sql_command="UPDATE alig
 	  SET	alig_completed			= '1',
-		alig_aligned_reads	 	= '"$(($star_unique_maps+$star_multi_maps))"',
-		alig_merged_reads		= '"$cnt_r1"',
+		alig_aligned_reads	 		= '"$(($star_unique_maps+$star_multi_maps))"',
+		alig_quality_check			= '0',
+		alig_merged_reads			= '!{merge_count}',
 		alig_fqc_basic_stats		= '$(worst_of ${arr1[0]} ${arr2[0]})',
 		alig_fqc_per_base_quality	= '$(worst_of ${arr1[1]} ${arr2[1]})',
 		alig_fqc_per_tile_quality	= '$(worst_of ${arr1[2]} ${arr2[2]})',
 		alig_fqc_per_seq_scores		= '$(worst_of ${arr1[3]} ${arr2[3]})',
 		alig_fqc_per_base_seq_content	= '$(worst_of ${arr1[4]} ${arr2[4]})',
 		alig_fqc_per_base_gc		= '$(worst_of ${arr1[5]} ${arr2[5]})',
-		alig_fqc_per_base_n		= '$(worst_of ${arr1[6]} ${arr2[6]})',
-		alig_fqc_seq_length		= '$(worst_of ${arr1[7]} ${arr2[7]})',
+		alig_fqc_per_base_n			= '$(worst_of ${arr1[6]} ${arr2[6]})',
+		alig_fqc_seq_length			= '$(worst_of ${arr1[7]} ${arr2[7]})',
 		alig_fqc_duplication		= '$(worst_of ${arr1[8]} ${arr2[8]})',
 		alig_fqc_overrepresented_seq	= '$(worst_of ${arr1[9]} ${arr2[9]})',
 		alig_fqc_adapter_content	= '$(worst_of ${arr1[10]} ${arr2[10]})',
-		alig_bbduk_input		= '"$bbduk_input"',
-		alig_bbduk_removed		= '"$bbduk_removed"',
-		alig_bbduk_result		= '"$bbduk_result"',
-		alig_star_input			= '"$star_input"',
-		alig_star_unique		= '"$star_unique_maps"',
-		alig_star_multi			= '"$star_multi_maps"',
-		alig_nudup_input		= '"$nudup_input"',
-		alig_nudup_pos_dup		= '"$nudup_pos_dup"',
-		alig_nudup_umi_dup		= '"$nudup_umi_dup"',
-		alig_final_total		= '"$final_total"',
+		alig_bbduk_input			= '"$bbduk_input"',
+		alig_bbduk_removed			= '"$bbduk_removed"',
+		alig_bbduk_result			= '"$bbduk_result"',
+		alig_star_input				= '"$star_input"',
+		alig_star_unique			= '"$star_unique_maps"',
+		alig_star_multi				= '"$star_multi_maps"',
+		alig_nudup_input			= '"$nudup_input"',
+		alig_nudup_pos_dup			= '"$nudup_pos_dup"',
+		alig_nudup_umi_dup			= '"$nudup_umi_dup"',
+		alig_final_total			= '"$final_total"',
 		alig_final_secondary		= '"$final_secondary"',
 		alig_final_supplementary	= '"$final_supplementary"',
 		alig_final_duplicates		= '"$final_duplicates"',
-		alig_final_mapped		= '"$final_mapped"',
-		alig_final_paired		= '"$final_paired"',
+		alig_final_mapped			= '"$final_mapped"',
+		alig_final_paired			= '"$final_paired"',
 		alig_final_properly_paired	= '"$final_properly_paired"',
-		alig_comments			= '"$comments"'
-	  WHERE alig_lib_id     = '"$sample"' AND
-		alig_pid        = '!{script_version}' AND
-		alig_sequ_batch = '!{batch}';"
+		alig_comments				= '"$alig_comments"'
+	  WHERE alig_lib_id		= '"$sample"' AND
+		alig_pid			= '!{script_version}' AND
+		alig_sequ_batch		= '!{batch}';"
 	
 	source ~/.cengen_database.id
 	mysql --host=23.229.215.131 \
