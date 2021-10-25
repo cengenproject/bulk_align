@@ -173,7 +173,7 @@ process initialize_db_entry{
 		
 		ready_to_process=1
 		
-		echo "New sample, will process: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
+		echo "New sample, will process: !{sample}!{sample_suffix}, !{script_version}, !{batch}"
 		
 		sql_command="INSERT INTO alig
 			SET alig_lib_id		= '!{sample}!{sample_suffix}',
@@ -202,10 +202,10 @@ process initialize_db_entry{
 	elif [ "$existing" -eq 0 ]
 	then
 		ready_to_process=1
-		echo "Sample already exists, but unfinished. Will reprocess: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
+		echo "Sample already exists, but unfinished. Will reprocess: !{sample}!{sample_suffix}, !{script_version}, !{batch}"
 	else
 		ready_to_process=0
-		echo "Sample already processed (completed=$existing ), will be ignored: !{sample}!{sample_suffix_for_init}, !{script_version}, !{batch}"
+		echo "Sample already processed (completed=$existing ), will be ignored: !{sample}!{sample_suffix}, !{script_version}, !{batch}"
 	fi
 	
 	'''
@@ -303,7 +303,7 @@ process trim{
 	cpus 1
 	time '2h'
 	memory '10GB'
-	module BBMap/38.90-GCCcore-10.2.0
+	module 'BBMap/38.90-GCCcore-10.2.0'
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'), val(sample), val(batch), val(sample_suffix) from samples_pqc
@@ -332,7 +332,7 @@ process align_first{
 	cpus 10
 	time '5h'
 	memory '15GB'
-	module STAR/2.7.7a-GCCcore-10.2.0
+	module 'STAR/2.7.7a-GCCcore-10.2.0'
 	
 	
 	input:
@@ -383,7 +383,7 @@ process dedup{
 	cpus 1
 	time '3h'
 	memory '10GB'
-	module SAMtools/1.11-GCCcore-10.2.0
+	module 'SAMtools/1.11-GCCcore-10.2.0'
 	
 	errorStrategy 'retry'
 	maxRetries 3
@@ -546,7 +546,7 @@ process save_logs{
 	
 	# ----    Final counts    ----
 	
-	bam_stats=$(samtools flagstat dedup.sorted.dedup.bam)
+	bam_stats=$(samtools flagstat dedup.bam)
 	
 	
 	regex="([[:digit:]]+) \\+ 0 in total \\(QC-passed reads \\+ QC-failed reads\\)[\n ]+([[:digit:]]+) \\+ 0 secondary[\n ]+([[:digit:]]+) \\+ 0 supplementary[\n ]+([[:digit:]]+) \\+ 0 duplicates[\n ]+([[:digit:]]+) \\+ 0 mapped \\([[:digit:].]+% : N/A\\)[\n ]+([[:digit:]]+) \\+ 0 paired in sequencing[\n ]+[[:digit:]]+ \\+ 0 read1[\n ]+[[:digit:]]+ \\+ 0 read2[\n ]+([[:digit:]]+) \\+ 0 properly paired \\([[:digit:].]+% : N/A\\)[\n ]+([[:digit:]]+) \\+ 0 with itself and mate mapped[\n ]+0 \\+ 0 singletons \\([[:digit:].]+% : N/A\\)[\n ]+0 \\+ 0 with mate mapped to a different chr[\n ]+0 \\+ 0 with mate mapped to a different chr \\(mapQ>=5\\)"
