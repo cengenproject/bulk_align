@@ -576,7 +576,7 @@ process save_logs{
 	echo                                                       >> sample.log
 	echo "Quality metrics"                                     >> sample.log
 	echo                                                       >> sample.log
-	echo "Merged reads: $cnt_r1"                               >> sample.log
+	echo "Merged reads: !{merge_count}"                               >> sample.log
 	echo "  --"                                                >> sample.log
 	echo "BBduk input: $bbduk_input"                           >> sample.log
 	echo "BBduk removed: $bbduk_removed"                       >> sample.log
