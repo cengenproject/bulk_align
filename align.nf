@@ -148,6 +148,8 @@ process initialize_db_entry{
 	
 	shell:
 	'''
+	touch !{sample}!{sample_suffix}
+	
 	
 	source ~/.cengen_database.id
 	
@@ -230,6 +232,8 @@ process merge{
 	
 	shell:
 	'''
+	touch !{sample}!{sample_suffix}
+	
 	echo "---------------------------------- Merging FASTQ files -----------------------------------"
 
 	
@@ -294,6 +298,8 @@ process qc{
 
 	shell:
 	'''
+	touch !{sample}!{sample_suffix}
+	
 	fastqc --extract --threads $SLURM_CPUS_PER_TASK merged_R*
 	'''	
 
@@ -317,6 +323,8 @@ process trim{
 	
 	shell:
 	'''
+	touch !{sample}!{sample_suffix}
+	
 	# weirdly, BBduk puts the log in stderr
 	
 	bbduk.sh in1=merged_R1.fastq.gz \
@@ -365,6 +373,8 @@ process align_first{
 	
 	shell:
 	'''
+	touch !{sample}!{sample_suffix}
+	
 	STAR --runThreadN $SLURM_CPUS_PER_TASK \
 		--genomeDir !{STAR_index_dir} \
 		--readFilesIn trimmed_R1.fastq.gz trimmed_R2.fastq.gz \
@@ -386,7 +396,7 @@ process dedup{
 	module 'SAMtools/1.11-GCCcore-10.2.0'
 	
 	errorStrategy 'retry'
-	maxRetries 3
+	maxRetries 5
 	
 	
 	input:
@@ -411,13 +421,21 @@ process dedup{
 	
 	
 	shell:
-	'''	
+	'''
+	touch !{sample}!{sample_suffix}
+	
 	nudup.py --paired-end \
 			 -f trimmed_I1.fq \
 			 --start 8 \
 			 --length 8 \
 			 -o dedup \
 			 aligned.bam >> nudup.log
+			 
+	if [[ $(cat dedup_dup_log.txt | cut -f1 | tail -1) -eq 0 ]]
+	then
+		echo "Empty input, NudDup may have done something strange, retrying."
+		exit 1
+	fi
 	
 	samtools index -@ $SLURM_CPUS_PER_TASK dedup.sorted.dedup.bam
 	'''
