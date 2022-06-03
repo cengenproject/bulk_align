@@ -615,6 +615,46 @@
        apply_no_weight="true"
        apply_with_weight="true"
        only_selected="false" />
+    <marker
+       inkscape:isstock="true"
+       style="overflow:visible"
+       id="marker5398-0-3"
+       refX="0"
+       refY="0"
+       orient="auto"
+       inkscape:stockid="Arrow2Lend">
+      <path
+         inkscape:connector-curvature="0"
+         transform="matrix(-1.1,0,0,-1.1,-1.1,0)"
+         d="M 8.7185878,4.0337352 -2.2072895,0.01601326 8.7185884,-4.0017078 c -1.7454984,2.3720609 -1.7354408,5.6174519 -6e-7,8.035443 z"
+         style="fill:#008000;fill-opacity:1;fill-rule:evenodd;stroke:#008000;stroke-width:0.625;stroke-linejoin:round;stroke-opacity:1"
+         id="path5396-1-3" />
+    </marker>
+    <marker
+       inkscape:stockid="Arrow2Lend"
+       orient="auto"
+       refY="0"
+       refX="0"
+       id="marker5352-7-8"
+       style="overflow:visible"
+       inkscape:isstock="true">
+      <path
+         inkscape:connector-curvature="0"
+         id="path5350-9-1"
+         style="fill:#008000;fill-opacity:1;fill-rule:evenodd;stroke:#008000;stroke-width:0.625;stroke-linejoin:round;stroke-opacity:1"
+         d="M 8.7185878,4.0337352 -2.2072895,0.01601326 8.7185884,-4.0017078 c -1.7454984,2.3720609 -1.7354408,5.6174519 -6e-7,8.035443 z"
+         transform="matrix(-1.1,0,0,-1.1,-1.1,0)" />
+    </marker>
+    <inkscape:path-effect
+       effect="bspline"
+       id="path-effect5342-9-8"
+       is_visible="true"
+       weight="33.333333"
+       steps="2"
+       helper_size="0"
+       apply_no_weight="true"
+       apply_with_weight="true"
+       only_selected="false" />
   </defs>
   <sodipodi:namedview
      pagecolor="#ffffff"
@@ -629,9 +669,9 @@
      inkscape:window-height="1017"
      id="namedview263"
      showgrid="false"
-     inkscape:zoom="0.56504695"
-     inkscape:cx="731.94803"
-     inkscape:cy="694.34689"
+     inkscape:zoom="1.5981941"
+     inkscape:cx="547.76395"
+     inkscape:cy="311.3194"
      inkscape:window-x="-8"
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
@@ -1375,7 +1415,7 @@
      transform="translate(396.54735,77.119622)" />
   <g
      id="g5338-5"
-     transform="translate(299.53793,689.12514)">
+     transform="translate(299.53793,686.12446)">
     <rect
        y="242.53706"
        x="-298.99567"
@@ -1910,4 +1950,13 @@
        x="821.08313"
        y="989.04749"
        style="stroke-width:0.75016928">bsn10_logs</tspan></text>
+  <path
+     transform="rotate(-175.07668,186.14546,549.36601)"
+     style="fill:none;stroke:#008000;stroke-width:0.75016928;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-mid:url(#marker5398-0-3);marker-end:url(#marker5352-7-8)"
+     d="m 123.67164,170.85635 c -10.6385,3.44187 -21.27791,6.88403 -52.533424,9.23115 -31.255513,2.34711 -83.117495,3.59869 -115.130615,4.19317 -32.01312,0.59448 -44.171143,0.5317 -56.330091,0.46892"
+     id="path5340-7-9"
+     inkscape:connector-curvature="0"
+     inkscape:path-effect="#path-effect5342-9-8"
+     inkscape:original-d="m 123.67164,170.85635 c -10.63865,3.44141 -21.27806,6.88357 -31.918214,10.32648 -51.870741,1.25105 -103.732723,2.50262 -155.601318,3.75509 -12.157623,-0.0635 -24.315646,-0.1263 -36.474598,-0.18833"
+     sodipodi:nodetypes="cccc" />
 </svg>
