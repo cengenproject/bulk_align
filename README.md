@@ -11,8 +11,9 @@ This is the workflow to process all sequencing data (obtained from the YCGA sequ
 
 Install [Nextflow](www.nextflow.io).
 Install [NuDup](https://github.com/tecangenomics/nudup/).
-Get database IDs and store them in `~/.cengen_database.id`.
+Obtain database IDs and store them in `~/.cengen_database.id`.
 
+Some processes call `R` code, and may require the following packages to be installed: `{readr}`, `{stringr}`, `{DBI}`, `{RMariaDB}`, `{wbData}`.
 
 
 ## Nextflow configuration
@@ -75,12 +76,13 @@ In run_nf.sh, you can add a `-with-dag dag10.dot` option. The dot file can be co
 
 
 # History of pipelines:
-bss2: BBduk (trimming) + STAR (mapping) + SAMtools (for dedup), used for the scRNA-Seq paper (because the panneuronal samples had no UMI measured)
-bsn3: BBduk (trimming) + STAR (mapping) + NuDup (for dedup), but mistake preventing metadata to be uploaded to database (so, gives an error message)
-bsn4 (not used): same as bsn3, but with correct database update
-bsn5,bsn6: BBduk + STAR + NuDup, written in Nextflow, including database update and QC. These were development versions, not really used.
-bsn7: BBduk+STAR+NuDup, with junction files exported, FASTQC and saving in the "cengen" database (vs test database previously). Note: the QC and alignements being processed in parallel resulted in a mixing of samples: the names of the publishDir files were incorrect.
-bsn8: qc and alignment done successively to keep sample names.
-bsn9: same results as bsn8, but processes refactored to have a single step per process.
-bsn10: fastq-screen before alignment, additional fastQC after alignment (on the bam). In addition, refactoring: database gets updated by each relevant process so the Channel that gets passed around contains only the main files.
+
+* bss2: BBduk (trimming) + STAR (mapping) + SAMtools (for dedup), used for the scRNA-Seq paper (because the panneuronal samples had no UMI measured)
+* bsn3: BBduk (trimming) + STAR (mapping) + NuDup (for dedup), but mistake preventing metadata to be uploaded to database (so, gives an error message)
+* bsn4 (not used): same as bsn3, but with correct database update
+* bsn5,bsn6: BBduk + STAR + NuDup, written in Nextflow, including database update and QC. These were development versions, not really used.
+* bsn7: BBduk+STAR+NuDup, with junction files exported, FASTQC and saving in the "cengen" database (vs test database previously). Note: the QC and alignements being processed in parallel resulted in a mixing of samples: the names of the publishDir files were incorrect.
+* bsn8: qc and alignment done successively to keep sample names.
+* bsn9: same results as bsn8, but processes refactored to have a single step per process.
+* bsn10: fastq-screen before alignment, additional fastQC after alignment (on the bam). In addition, refactoring: database gets updated by each relevant process so the Channel that gets passed around contains only the main files.
 
