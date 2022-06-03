@@ -162,19 +162,12 @@ process initialize_db_entry{
 	
 	# Check if sample was already succesfully processed
 	source ~/.cengen_database.id
-	sql_command="SELECT alig_completed FROM !{params.db_table_name}
-		WHERE alig_lib_id		= '!{sample}!{sample_suffix}' AND
-		    alig_pid		= '!{script_version}' AND
-		    alig_sequ_batch	= '!{batch}';"
+	sql_command="SELECT alig_completed FROM !{params.db_table_name} WHERE alig_lib_id = '!{sample}!{sample_suffix}' AND alig_pid = '!{script_version}' AND alig_sequ_batch = '!{batch}';"
+	echo "Executing SQL command: $sql_command"		
 			
-			
-	existing=$(mysql --host=23.229.215.131 \
-					--user=$username \
-					--password=$password \
-					--database=!{params.db_name} \
-					--execute="$sql_command" \
-					--silent --raw)
+	existing=$(mysql --host=23.229.215.131 --user=$username --password=$password --database=!{params.db_name} --execute="$sql_command" --silent --raw)
 	
+echo "done"
 	
 	
 	if [[ -z "$existing" ]]
@@ -184,7 +177,7 @@ process initialize_db_entry{
 		echo "New sample, will process: !{sample}!{sample_suffix}, !{script_version}, !{batch}"
 		echo "New sample, will process." >> sample.log
 		
-		sql_command="INSERT INTO alig
+		sql_command="INSERT INTO !{params.db_table_name}
 			SET alig_lib_id		= '!{sample}!{sample_suffix}',
 				alig_pid		= '!{script_version}',
 				alig_sequ_batch	= '!{batch}',
@@ -342,8 +335,8 @@ process fastqc_raw{
 	
 	# Process results: read summary file as a bash array
 	
-	arr1=($(cat merged_R1_fastqc_raw/summary.txt | cut -f1))
-	arr2=($(cat merged_R2_fastqc_raw/summary.txt | cut -f1))
+	arr1=($(cat merged_R1_fastqc/summary.txt | cut -f1))
+	arr2=($(cat merged_R2_fastqc/summary.txt | cut -f1))
 
 	worst_of (){
 		if [ $1 == "FAIL"  ] || [ $2 == "FAIL" ]
@@ -405,9 +398,12 @@ process fastq_screen{
 	  path("*_screen.*")
 
 	publishDir mode: 'copy',
+			pattern: '*_screen_.*',
 			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version+'_logs/',
 			saveAs: {filename ->
-					read_file = (filename =~ /merged_R([12])_screen\\.(html|png|txt)/)[0]
+					println("Before"+filename)
+					read_file = (filename =~ /merged_R([12])_screen\.(html|png|txt)/)[0]
+					println("res "+read_file)
 					sample+sample_suffix+'_fastqscreen_R'+read_file[1]+'.'+read_file[2]}
 
 	shell:
@@ -436,7 +432,7 @@ process fastq_screen{
 process db_fastqscreen{
 	cpus '1'
 	time '10min'
-	memory '100MB'
+	memory '500MB'
 	
 	module 'R/4.2.0-foss-2020b'
 	
@@ -506,8 +502,8 @@ process db_fastqscreen{
 	
 	cat("Updating DB with FastQ-Screen results for !{sample}!{sample_suffix}\n")
 	
-	fqscr_R1 <- parse_fqscr_summary(!{merged_R1_screen.txt})
-	fqscr_R2 <- parse_fqscr_summary(!{merged_R2_screen.txt})
+	fqscr_R1 <- parse_fqscr_summary("merged_R1_screen.txt")
+	fqscr_R2 <- parse_fqscr_summary("merged_R2_screen.txt")
 	
 
 	sql_command <- paste0("UPDATE !{params.db_table_name}
@@ -519,7 +515,7 @@ process db_fastqscreen{
 		alig_fqscr_rrna		      = '", max(fqscr_R1$rrna, fqscr_R2$rrna), "'
 	  WHERE alig_lib_id		= '!{sample}!{sample_suffix}' AND
 		alig_pid			= '!{script_version}' AND
-		alig_sequ_batch		= '!{batch}';"
+		alig_sequ_batch		= '!{batch}';")
 	
 	source("~/.cengen_database.id")
 	
@@ -527,7 +523,7 @@ process db_fastqscreen{
                    host = "23.229.215.131",
                    user = username,
                    password = password,
-                   dbname = "cengen")
+                   dbname = "!{params.db_name}")
 	
 	DBI::dbGetQuery(con, sql_command)
 	DBI::dbDisconnect(con)
@@ -620,6 +616,7 @@ process align{
 	output:
 	  tuple path("aligned_Aligned.sortedByCoord.out.bam"), path('trimmed_I1.fq'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_align
+	  path("*_SJ.out.tab")
 	
 	publishDir mode: 'copy',
 		pattern: '*_SJ.out.tab',
@@ -675,11 +672,11 @@ process align{
 	
 	
 	sql_command="UPDATE !{params.db_table_name}
-	  SET	alig_star_finished  = '$star_finished_successfully'
-	    alig_star_input			= '"$star_input"',
-		alig_star_unique		= '"$star_unique_maps"',
-		alig_star_multi			= '"$star_multi_maps"',
-		alig_star_unal_too_many_loci  = '$alig_star_unal_too_many_loci',
+	  SET	alig_star_finished  = '$star_finished_successfully',
+	    alig_star_input			= '$star_input',
+		alig_star_unique		= '$star_unique_maps',
+		alig_star_multi			= '$star_multi_maps',
+		alig_star_unal_too_many_loci  = '$star_unal_too_many_loci',
 		alig_star_unal_many_mismatches = '$star_unal_many_mismatches',
 		alig_star_unal_too_short       = '$star_unal_too_short',
 		alig_star_unal_other           = 'star_unal_other'
@@ -776,17 +773,19 @@ process dedup{
 
 
 ch_tuple_for_merging = ch_dedup_for_merging
-                        .map{ sample, bams -> tuple(groupKey(sample, bams.size()), bams) }
+			.groupTuple()
+//                        .map{ sample, bams -> tuple(groupKey(sample, bams.size()), bams) }
 						
 
 process export_bam{
 	cpus '5'
 	time '30min'
 	memory '3GB'
-	module 'SAMtools/1.11-GCCcore-10.2.0'
 	
+	module 'SAMtools/1.13-GCCcore-10.2.0'
+
 	input:
-	  tuple val(sample), list(path, stageAs: 'dedup*.bam') from ch_tuple_for_merging
+          tuple val(sample), path(bam_files, stageAs: 'dedup*.bam') from ch_tuple_for_merging
 	
 	output:
 	  path "*.bam"
@@ -808,7 +807,7 @@ process export_bam{
 	
 	samtools merge -@ $SLURM_CPUS_PER_TASK -o !{sample}.bam dedup*.bam
 	
-	samtools index -@ $SLURM_CPUS_PER_TASK *.bam
+	samtools index -@ $SLURM_CPUS_PER_TASK !{sample}.bam
 	
 	
 	'''
@@ -830,7 +829,7 @@ process fastqc_post{
 			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_dedup_for_qc
 	
 	output:
-	  tuple path("dedup.sorted.dedup.bam"),
+	  tuple path("dedup.bam"),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_qc_post
 	  path "*.html"
 	
@@ -896,11 +895,11 @@ process finalize{
 	errorStrategy 'retry'
 	maxRetries 3
 
-	module 'SAMtools/1.11-GCCcore-10.2.0'
+	module 'SAMtools/1.13-GCCcore-10.2.0'
 	
 	input:
 	  tuple path("dedup.bam"),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_qc_post
+			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_qc_post
 	
 	output:
 	  path "sample.log"
@@ -930,7 +929,7 @@ process finalize{
 	
 	bam_stats=$(samtools flagstat dedup.bam)
 		
-	regex="([[:digit:]]+) \\+ 0 in total \\(QC-passed reads \\+ QC-failed reads\\)[\n ]+([[:digit:]]+) \\+ 0 secondary[\n ]+([[:digit:]]+) \\+ 0 supplementary[\n ]+([[:digit:]]+) \\+ 0 duplicates[\n ]+([[:digit:]]+) \\+ 0 mapped \\([[:digit:].]+% : N/A\\)[\n ]+([[:digit:]]+) \\+ 0 paired in sequencing[\n ]+[[:digit:]]+ \\+ 0 read1[\n ]+[[:digit:]]+ \\+ 0 read2[\n ]+([[:digit:]]+) \\+ 0 properly paired \\([[:digit:].]+% : N/A\\)[\n ]+([[:digit:]]+) \\+ 0 with itself and mate mapped[\n ]+0 \\+ 0 singletons \\([[:digit:].]+% : N/A\\)[\n ]+0 \\+ 0 with mate mapped to a different chr[\n ]+0 \\+ 0 with mate mapped to a different chr \\(mapQ>=5\\)"
+	regex="([[:digit:]]+) \\+ 0 in total \\(QC-passed reads \\+ QC-failed reads\\)[[:space:]]+[[:digit:]]+ \\+ 0 primary[[:space:]]+([[:digit:]]+) \\+ 0 secondary[[:space:]]+([[:digit:]]+) \\+ 0 supplementary[[:space:]]+([[:digit:]]+) \\+ 0 duplicates[[:space:]]+[[:digit:]]+ \\+ 0 primary duplicates[[:space:]]+([[:digit:]]+) \\+ 0 mapped \\([[:digit:].]+% : N/A\\)[[:space:]]+[[:digit:]]+ \\+ 0 primary mapped \\([[:digit:].]+% : N/A\\)[[:space:]]+([[:digit:]]+) \\+ 0 paired in sequencing[[:space:]]+[[:digit:]]+ \\+ 0 read1[[:space:]]+[[:digit:]]+ \\+ 0 read2[[:space:]]+([[:digit:]]+) \\+ 0 properly paired \\([[:digit:].]+% : N/A\\)[[:space:]]+([[:digit:]]+) \\+ 0 with itself and mate mapped[[:space:]]+0 \\+ 0 singletons \\([[:digit:].]+% : N/A\\)[[:space:]]+0 \\+ 0 with mate mapped to a different chr[[:space:]]+0 \\+ 0 with mate mapped to a different chr \\(mapQ>=5\\)"
 
 	if [[ $bam_stats =~ $regex ]]
 	then
@@ -947,7 +946,7 @@ process finalize{
 		echo "Content:" 	>> sample.log
 		echo $bam_stats 	>> sample.log
 		echo  		    	>> sample.log
-		alig_comments="$alig_comments -- failed to read flagstats"
+		alig_comments="$warnings -- failed to read flagstats"
 	fi
 	
 	
@@ -978,7 +977,7 @@ process finalize{
 					  --execute="$sql_command" \
 					  --batch \
 					  | head -1))
-	IFS=$'\t' existing=($(mysql --host=23.229.215.131 -u${username} -p${password} cengen -e "${sql_command}" --batch --raw --silent))
+	IFS=$'\t' existing=($(mysql --host=23.229.215.131 -u${username} -p${password} !{params.db_name} -e "${sql_command}" --batch --raw --silent))
 	
 	if [[ $(( ${#colnames[@]} - 1 )) != ${#existing[@]} ]]
 	then
@@ -991,6 +990,7 @@ process finalize{
 	declare -A db_content
 	for (( i=0; i < ${#colnames[@]}; i++ ))
 	do
+		echo "  $i: ${colnames[$i]} is ${existing[$i]}"
 		db_content["${colnames[$i]}"]="${existing[$i]}"
 	done
 	

@@ -1,3 +1,6 @@
 .nextflow*
 slurm-*
 presentation
+dags_archive/
+logs/
+
