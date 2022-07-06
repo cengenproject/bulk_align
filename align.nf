@@ -20,7 +20,7 @@ batch_names = [ '000000_D00000_0000': 'bis']
 
 // Locations and parameters
 params.root_dir = '/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk'
-params.WSversion = 'WS281'
+params.WSversion = 'WS284'
 params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 params.fastq_screen_conf = '/home/aw853/project/references/2205a_fastq_screen.conf'
 
@@ -45,7 +45,9 @@ ref_gtf = 'c_elegans.PRJNA13758.'+params.WSversion+'.canonical_geneset.gtf'
 
 ref_gtf_index = params.references_dir + '/' + params.WSversion + '/' + ref_gtf
 WS_ref_dir = params.references_dir + "/" + params.WSversion
-STAR_index_dir = WS_ref_dir + "/star_index_2-7-7a/"
+
+STAR_version = '2.7.9a'
+STAR_index_dir = WS_ref_dir + '/' + STAR_version + '/'
 
 
 
@@ -86,7 +88,7 @@ process testEverything{
 	val true into tested_successfully
 
 	module 'R/4.2.0-foss-2020b'
-	module 'STAR/2.7.9a-GCCcore-10.2.0'
+	module 'STAR/'+STAR_version+'-GCCcore-10.2.0'
 	
 	shell:
 	'''
@@ -189,7 +191,7 @@ echo "done"
 				alig_reference_source = 'Wormbase',
 				alig_reference_version = '!{params.WSversion}',
 				alig_software	   = 'STAR',
-				alig_software_version  = '2.7.7a';"
+				alig_software_version  = '!{STAR_version}';"
 
 		mysql --host=23.229.215.131 \
 			--user=$username \
@@ -607,7 +609,7 @@ process align{
 	time '5h'
 	memory '15GB'
 	
-	module 'STAR/2.7.7a-GCCcore-10.2.0'
+	module 'STAR/'+ STAR_version +'-GCCcore-10.2.0'
 	
 	input:
 	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('trimmed_I1.fq'),
@@ -774,7 +776,7 @@ process dedup{
 
 ch_tuple_for_merging = ch_dedup_for_merging
 			.groupTuple()
-//                        .map{ sample, bams -> tuple(groupKey(sample, bams.size()), bams) }
+
 						
 
 process export_bam{
