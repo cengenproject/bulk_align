@@ -5,6 +5,7 @@
 #SBATCH --mem=1G
 #SBATCH --time=21-05:10:00
 
-nextflow run align.nf -with-dag dag10.dot -resume
+#nextflow run align.nf -with-dag dag10.dot -resume
+nextflow run align.nf -resume
 
 
