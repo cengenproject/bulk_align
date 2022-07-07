@@ -681,7 +681,7 @@ process align{
 		alig_star_unal_too_many_loci  = '$star_unal_too_many_loci',
 		alig_star_unal_many_mismatches = '$star_unal_many_mismatches',
 		alig_star_unal_too_short       = '$star_unal_too_short',
-		alig_star_unal_other           = 'star_unal_other'
+		alig_star_unal_other           = '$star_unal_other'
 	  WHERE alig_lib_id		= '!{sample}!{sample_suffix}' AND
 		alig_pid			= '!{script_version}' AND
 		alig_sequ_batch		= '!{batch}';"
@@ -981,7 +981,7 @@ process finalize{
 					  | head -1))
 	IFS=$'\t' existing=($(mysql --host=23.229.215.131 -u${username} -p${password} !{params.db_name} -e "${sql_command}" --batch --raw --silent))
 	
-	if [[ $(( ${#colnames[@]} - 1 )) != ${#existing[@]} ]]
+	if [[ ${#colnames[@]} -ne ${#existing[@]} ]]
 	then
 		warnings="$warnings -- Error retrieving database: number of columns does not match:"
 		warnings="$warnings ~ Expected ${#colnames[@]}, got ${#existing[@]} instead."
