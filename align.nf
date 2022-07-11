@@ -225,6 +225,9 @@ process merge{
 	time '2h'
 	memory '15GB'
 
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
+	maxRetries 3
+	
 	input:
 	  val ready_to_process
 	  tuple path(sample_dir), path("sample.log"), val(batch), val(sample), val(sample_suffix) from ch_init
@@ -298,6 +301,9 @@ process fastqc_raw{
 	cpus '2'
 	time '2h'
 	memory '10GB'
+
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
+	maxRetries 3
 
 	module 'FastQC/0.11.9-Java-11'
 	
@@ -435,6 +441,9 @@ process db_fastqscreen{
 	cpus '1'
 	time '10min'
 	memory '500MB'
+
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
+	maxRetries 3
 	
 	module 'R/4.2.0-foss-2020b'
 	
@@ -486,7 +495,7 @@ process db_fastqscreen{
 		  fqs_out$`%Multiple_hits_multiple_genomes`[fqs_out$Genome %in% is_nonworm]
 		
 		no_match <- stringr::str_match(string = fqs_out_str[length(fqs_out_str)],
-									   pattern = "^%Hit_no_genomes: ([0-9.]{4})$")[,2]
+									   pattern = "^%Hit_no_genomes: ([0-9.]{4,5})$")[,2]
 		
 		mitochondria <- fqs_out$`%One_hit_one_genome`[fqs_out$Genome == "Mitochondria"] +
 		  fqs_out$`%Multiple_hits_one_genome`[fqs_out$Genome == "Mitochondria"] +
@@ -539,6 +548,10 @@ process trim{
 	cpus 1
 	time '2h'
 	memory '10GB'
+
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
+	maxRetries 3
+
 	module 'BBMap/38.90-GCCcore-10.2.0'
 	
 	input:
@@ -608,6 +621,9 @@ process align{
 	cpus 10
 	time '5h'
 	memory '15GB'
+
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
+	maxRetries 3
 	
 	module 'STAR/'+ STAR_version +'-GCCcore-10.2.0'
 	
@@ -823,6 +839,9 @@ process fastqc_post{
 	time '2h'
 	memory '10GB'
 
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
+	maxRetries 3
+
 	module 'FastQC/0.11.9-Java-11'
 	
 		
@@ -894,7 +913,7 @@ process finalize{
 	time '1h'
 	memory '1GB'
 	
-	errorStrategy 'retry'
+	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
 	maxRetries 3
 
 	module 'SAMtools/1.13-GCCcore-10.2.0'
