@@ -24,8 +24,8 @@ params.WSversion = 'WS284'
 params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 params.fastq_screen_conf = '/home/aw853/project/references/2205a_fastq_screen.conf'
 
-params.db_name = 'test_cengen'
-params.db_table_name = 'alig3'
+params.db_name = 'cengen'
+params.db_table_name = 'alig'
 
 /* ----------------------------------------------------------------------------
               No  modification should be required below this line
@@ -33,7 +33,7 @@ params.db_table_name = 'alig3'
 
 
 // update when this script is modified
-script_version = "bsn10"
+script_version = "bsn11"
 
 
 
@@ -487,7 +487,7 @@ process db_fastqscreen{
 		  fqs_out$`%Multiple_hits_multiple_genomes`[fqs_out$Genome == "Worm"]
 		
 		is_nonworm <- setdiff(fqs_out$Genome,
-		                      c("Worm", "Mitochondria","rRNA"))
+		                      c("Worm", "Mitochondria","rRNA","Vectors","Adapters"))
 		
 		any_other <- fqs_out$`%One_hit_one_genome`[fqs_out$Genome %in% is_nonworm] +
 		  fqs_out$`%Multiple_hits_one_genome`[fqs_out$Genome %in% is_nonworm] +
@@ -495,7 +495,7 @@ process db_fastqscreen{
 		  fqs_out$`%Multiple_hits_multiple_genomes`[fqs_out$Genome %in% is_nonworm]
 		
 		no_match <- stringr::str_match(string = fqs_out_str[length(fqs_out_str)],
-									   pattern = "^%Hit_no_genomes: ([0-9.]{4,5})$")[,2]
+									   pattern = "^%Hit_no_genomes: ([0-9.]{3,6})$")[,2]
 		
 		mitochondria <- fqs_out$`%One_hit_one_genome`[fqs_out$Genome == "Mitochondria"] +
 		  fqs_out$`%Multiple_hits_one_genome`[fqs_out$Genome == "Mitochondria"] +
@@ -718,12 +718,12 @@ process align{
 
 process dedup{
 	cpus 1
-	time '3h'
+	time '5h'
 	memory '10GB'
 	module 'SAMtools/1.11-GCCcore-10.2.0'
 	
 	errorStrategy 'retry'
-	maxRetries 5
+	maxRetries 15
 	
 	input:
 	  tuple path("aligned.bam"), path('trimmed_I1.fq'),
