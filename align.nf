@@ -25,7 +25,7 @@ params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 params.fastq_screen_conf = '/home/aw853/project/references/2205a_fastq_screen.conf'
 
 params.db_name = 'cengen'
-params.db_table_name = 'alig'
+params.db_table_name = 'alig_11'
 
 /* ----------------------------------------------------------------------------
               No  modification should be required below this line
