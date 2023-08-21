@@ -402,7 +402,7 @@ process fastq_screen{
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix),
-			emit: outs
+		emit: outs
 	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix),
 	    emit: summaries
 	  path("*_screen.*")
@@ -1149,18 +1149,18 @@ workflow {
 	ch_init = initialize_db_entry(samples_dir, samples_suffix, tested_successfully)
 	ch_merged = merge_fastq(ch_init)
 	ch_fastqc_raw = fastqc_raw(ch_merged)
-	ch_fastq_screen = fastq_screen(ch_fastqc_raw.outs)
+	ch_fastq_screen = fastq_screen(ch_fastqc_raw.out.outs)
 	
-	db_fastqscreen(ch_fastq_screen.summaries)
+	db_fastqscreen(ch_fastq_screen.out.summaries)
 	
-	ch_trim = trim(ch_fastq_screen.outs)
+	ch_trim = trim(ch_fastq_screen.out.outs)
 	
-	ch_align = align(ch_trim.outs)
+	ch_align = align(ch_trim.out.outs)
 	ch_dedup = dedup(ch_align)
 	
-	export_bam(ch_dedup.for_merging.groupTuple())
+	export_bam(ch_dedup.out.for_merging.groupTuple())
 	
-	fastqc_post(ch_dedup.for_qc) | finalize()
+	fastqc_post(ch_dedup.out.for_qc) | finalize()
 	
 }
 
