@@ -312,8 +312,7 @@ process fastqc_raw{
 
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix),
-			emit: outs
+			path("sample.log"), val(sample), val(batch), val(sample_suffix), emit: fqc_raw
 	  path("*.html")
 
 	publishDir mode: 'copy',
@@ -1149,7 +1148,7 @@ workflow {
 	ch_init = initialize_db_entry(samples_dir, samples_suffix, tested_successfully)
 	ch_merged = merge_fastq(ch_init)
 	ch_fastqc_raw = fastqc_raw(ch_merged)
-	ch_fastq_screen = fastq_screen(ch_fastqc_raw.out.outs)
+	ch_fastq_screen = fastq_screen(ch_fastqc_raw.out.fqc_raw)
 	
 	db_fastqscreen(ch_fastq_screen.out.summaries)
 	
