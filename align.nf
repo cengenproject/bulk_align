@@ -33,7 +33,7 @@ params.db_table_name = 'alig_11'
 
 
 // update when this script is modified
-script_version = "bsn11"
+script_version = "bsn11a"
 
 
 
@@ -312,7 +312,7 @@ process fastqc_raw{
 
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 			emit: outs
 	  path("*.html")
 
@@ -401,9 +401,9 @@ process fastq_screen{
 
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 			emit: outs
-	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix)
+	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix),
 	    emit: summaries
 	  path("*_screen.*")
 
@@ -635,7 +635,7 @@ process align{
 	
 	output:
 	  tuple path("aligned_Aligned.sortedByCoord.out.bam"), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 			emit: outs
 	  path("*_SJ.out.tab")
 	
@@ -734,9 +734,9 @@ process dedup{
 	
 	output:
 	  tuple path("dedup.sorted.dedup.bam"),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 		emit: for_qc
-	  tuple val(sample), path("dedup.sorted.dedup.bam")
+	  tuple val(sample), path("dedup.sorted.dedup.bam"),
 	    emit:for_merging
 	
 	
