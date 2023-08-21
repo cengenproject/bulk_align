@@ -38,7 +38,6 @@ script_version = "bsn11"
 
 
 
-
 // --------    Define references    --------
 ref_genome = 'c_elegans.PRJNA13758.'+params.WSversion+'.genomic.fa'
 ref_gtf = 'c_elegans.PRJNA13758.'+params.WSversion+'.canonical_geneset.gtf'
@@ -85,7 +84,7 @@ samples_suffix = Channel.fromList(sample_suffixes_list)
 process testEverything{
 	
 	output:
-	val true into tested_successfully
+	val true
 
 	module 'R/4.2.0-foss-2020b'
 	module 'STAR/'+STAR_version+'-GCCcore-10.2.0'
@@ -147,12 +146,12 @@ process initialize_db_entry{
 	
 	input:
 	  val tested_successfully
-	  tuple path(sample_dir), val(batch), val(sample) from samples_dir
-	  val sample_suffix from samples_suffix
+	  tuple path(sample_dir), val(batch), val(sample)
+	  val sample_suffix
 	
 	output:
 	  env ready_to_process
-	  tuple path(sample_dir), path("sample.log"), val(batch), val(sample), val(sample_suffix) into ch_init
+	  tuple path(sample_dir), path("sample.log"), val(batch), val(sample), val(sample_suffix)
 	
 	shell:
 	'''
@@ -220,7 +219,7 @@ echo "done"
 }
 
 
-process merge{
+process merge_fastq{
 	cpus '1'
 	time '2h'
 	memory '15GB'
@@ -230,14 +229,14 @@ process merge{
 	
 	input:
 	  val ready_to_process
-	  tuple path(sample_dir), path("sample.log"), val(batch), val(sample), val(sample_suffix) from ch_init
+	  tuple path(sample_dir), path("sample.log"), val(batch), val(sample), val(sample_suffix)
 	
 	when:
 		ready_to_process == '1'
 	
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-		path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_merge
+		path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	shell:
 	'''
@@ -258,7 +257,7 @@ process merge{
 	zcat merged_I1.fastq.gz | awk 'NR%4 == 1 {print} NR%4 == 2 {print substr($0, 0, 8)} NR%4 == 3 {print} NR%4 == 0 {print substr($0,0,8)}' > trimmed_I1.fq
 	
 	
-	# Check nb of reads after merge 
+	# Check nb of reads after merge
 	cnt_r1=$(zcat merged_R1.fastq.gz | wc -l)
 	cnt_r2=$(zcat merged_R2.fastq.gz | wc -l)
 	cnt_i1=$(cat trimmed_I1.fq | wc -l)
@@ -309,11 +308,12 @@ process fastqc_raw{
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_merge
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_fastqc_raw
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			emit: outs
 	  path("*.html")
 
 	publishDir mode: 'copy',
@@ -397,12 +397,14 @@ process fastq_screen{
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_fastqc_raw
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 
 	output:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_fastqscreen
-	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix) into summaries_fastqscreen
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			emit: outs
+	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix)
+	    emit: summaries
 	  path("*_screen.*")
 
 	publishDir mode: 'copy',
@@ -448,7 +450,7 @@ process db_fastqscreen{
 	module 'R/4.2.0-foss-2020b'
 	
 	input:
-	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix) from summaries_fastqscreen
+	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix)
 	  
 	shell:
 	'''
@@ -556,11 +558,11 @@ process trim{
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_fastqscreen
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
 	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_trim
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	
 	shell:
@@ -629,11 +631,12 @@ process align{
 	
 	input:
 	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_trim
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
 	  tuple path("aligned_Aligned.sortedByCoord.out.bam"), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_align
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			emit: outs
 	  path("*_SJ.out.tab")
 	
 	publishDir mode: 'copy',
@@ -727,12 +730,14 @@ process dedup{
 	
 	input:
 	  tuple path("aligned.bam"), path('trimmed_I1.fq'),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_align
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
 	  tuple path("dedup.sorted.dedup.bam"),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_dedup_for_qc
-	  tuple val(sample), path("dedup.sorted.dedup.bam") into ch_dedup_for_merging
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+		emit: for_qc
+	  tuple val(sample), path("dedup.sorted.dedup.bam")
+	    emit:for_merging
 	
 	
 	shell:
@@ -803,7 +808,7 @@ process export_bam{
 	module 'SAMtools/1.13-GCCcore-10.2.0'
 
 	input:
-          tuple val(sample), path(bam_files, stageAs: 'dedup*.bam') from ch_tuple_for_merging
+          tuple val(sample), path(bam_files, stageAs: 'dedup*.bam')
 	
 	output:
 	  path "*.bam"
@@ -847,11 +852,11 @@ process fastqc_post{
 		
 	input:
 	  tuple path("dedup.bam"),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_dedup_for_qc
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
 	  tuple path("dedup.bam"),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) into ch_qc_post
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	  path "*.html"
 	
 	
@@ -920,7 +925,7 @@ process finalize{
 	
 	input:
 	  tuple path("dedup.bam"),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix) from ch_qc_post
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
 	  path "sample.log"
@@ -1143,5 +1148,23 @@ process finalize{
 
 
 
-
+workflow {
+	tested_successfully = testEverything()
+	ch_init = initialize_db_entry(samples_dir, samples_suffix, tested_successfully)
+	ch_merged = merge_fastq(ch_init)
+	ch_fastqc_raw = fastqc_raw(ch_merged)
+	ch_fastq_screen = fastq_screen(ch_fastqc_raw.outs)
+	
+	db_fastqscreen(ch_fastq_screen.summaries)
+	
+	ch_trim = trim(ch_fastq_screen.outs)
+	
+	ch_align = align(ch_trim.outs)
+	ch_dedup = dedup(ch_align)
+	
+	export_bam(ch_dedup.for_merging)
+	
+	fastqc_post(ch_dedup.for_qc) | finalize()
+	
+}
 
