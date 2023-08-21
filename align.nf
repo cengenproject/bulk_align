@@ -852,7 +852,8 @@ process fastqc_post{
 	
 	output:
 	  tuple path("dedup.bam"),
-			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+			path("sample.log"), val(sample), val(batch), val(sample_suffix),
+		emit: outs
 	  path "*.html"
 	
 	
@@ -1159,7 +1160,9 @@ workflow {
 	
 	export_bam(dedup.out.for_merging.groupTuple())
 	
-	fastqc_post(dedup.out.for_qc) | finalize()
+	fastqc_post(dedup.out.for_qc)
+
+	finalize(fastqc_post.out.outs)
 	
 }
 
