@@ -1154,9 +1154,8 @@ workflow {
 	db_fastqscreen(fastq_screen.out.summaries)
 	
 	trim(fastq_screen.out.outs)
-	
-	ch_align = align(trim.out.outs)
-	dedup(ch_align)
+	align(trim.out)
+	dedup(align)
 	
 	export_bam(dedup.out.for_merging.groupTuple())
 	
