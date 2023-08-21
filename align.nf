@@ -794,10 +794,6 @@ process dedup{
 }
 
 
-
-ch_tuple_for_merging = ch_dedup_for_merging
-			.groupTuple()
-
 						
 
 process export_bam{
@@ -1162,9 +1158,10 @@ workflow {
 	ch_align = align(ch_trim.outs)
 	ch_dedup = dedup(ch_align)
 	
-	export_bam(ch_dedup.for_merging)
+	export_bam(ch_dedup.for_merging.groupTuple())
 	
 	fastqc_post(ch_dedup.for_qc) | finalize()
 	
 }
 
+			
