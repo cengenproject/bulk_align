@@ -36,6 +36,8 @@ params.db_table_name = 'alig_11'
 script_version = "bsn11a"
 
 
+// output directory
+publish_dir = '/gpfs/gibbs/pi/hammarlund/CeNGEN/bulk/bulk_alignments/' + script_version
 
 
 // --------    Define references    --------
@@ -45,7 +47,7 @@ ref_gtf = 'c_elegans.PRJNA13758.'+params.WSversion+'.canonical_geneset.gtf'
 ref_gtf_index = params.references_dir + '/' + params.WSversion + '/' + ref_gtf
 WS_ref_dir = params.references_dir + "/" + params.WSversion
 
-STAR_version = '2.7.8a'
+STAR_version = '2.7.7a'
 STAR_index_dir = WS_ref_dir + '/' + STAR_version + '/'
 
 
@@ -56,7 +58,7 @@ STAR_index_dir = WS_ref_dir + '/' + STAR_version + '/'
 batch_dirs = batch_names.keySet().collect { "${params.root_dir}/${it}/Sample_*" }
 samples_dir = Channel.fromPath( batch_dirs, type: 'dir' )
 	.map {it ->
-		(it =~ "^/SAY/standard/mh588-CC1100-MEDGEN/raw_fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]}
+		(it =~ "^/gpfs/gibbs/pi/hammarlund/CeNGEN/bulk/fastq/bulk/([0-9_D]+)/Sample_([A-Zef1-9]{2,4}r[0-9]{1,4})")[0]}
 
 
 // count nb of Samples in each batch
@@ -86,8 +88,12 @@ process testEverything{
 	output:
 	val true
 
-	module 'R/4.2.0-foss-2020b'
+	module 'R'
 	module 'STAR/'+STAR_version+'-GCCcore-10.2.0'
+
+	conda 'python=2.7'
+
+	cpus = 2
 	
 	shell:
 	'''
@@ -97,6 +103,7 @@ process testEverything{
 	mysql --host=23.229.215.131 --user=$username --password=$password --database=!{params.db_name} --execute="exit" || exit 1
 	
 	# Check that NuDup installed and found
+	which python
 	nudup.py --version || exit 1
 	
 	# Check that references are available
@@ -318,7 +325,7 @@ process fastqc_raw{
 
 	publishDir mode: 'copy',
 			pattern: '*.html',
-			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version+'_logs/',
+			path: publish_dir + '_logs/',
 			saveAs: {filename ->
 					read_file = (filename =~ /merged_R([12])_fastqc/)[0][1]
 					sample+sample_suffix+'_fastqc_raw_R'+read_file+'.html'}
@@ -393,7 +400,7 @@ process fastq_screen{
 	time '2h'
 	memory '10GB'
 
-	module 'FastQ_Screen/0.14.1-foss-2018b-Perl-5.28.0'
+	conda 'fastq-screen'
 	
 	input:
 	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
@@ -409,7 +416,7 @@ process fastq_screen{
 
 	publishDir mode: 'copy',
 			pattern: '*_screen_.*',
-			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version+'_logs/',
+			path: publish_dir + '_logs/',
 			saveAs: {filename ->
 					println("Before"+filename)
 					read_file = (filename =~ /merged_R([12])_screen\.(html|png|txt)/)[0]
@@ -577,7 +584,7 @@ process trim{
 		 in2=merged_R2.fastq.gz \
 		 out1=trimmed_R1.fastq.gz \
 		 out2=trimmed_R2.fastq.gz \
-		 ref="/ycga-gpfs/apps/hpc/software/Trimmomatic/0.39-Java-1.8/adapters/TruSeq3-PE.fa" \
+		 ref="/vast/palmer/apps/avx2/software/Trimmomatic/0.39-Java-11/adapters/TruSeq3-PE.fa" \
 		 ktrim=r k=23 mink=11 hdist=1 tpe tbo >> bbduk.log 2>&1
 	
 	echo "----  BBduk trim  ----" >> sample.log
@@ -641,7 +648,7 @@ process align{
 	
 	publishDir mode: 'copy',
 		pattern: '*_SJ.out.tab',
-		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_junctions/',
+		path: publish_dir + '_junctions/',
 		saveAs: { sample + sample_suffix + '.SJ.tab' }
 	
 	
@@ -725,6 +732,8 @@ process dedup{
 	memory '10GB'
 	module 'SAMtools/1.11-GCCcore-10.2.0'
 	
+	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/nudup/'
+
 	errorStrategy 'retry'
 	maxRetries 15
 	
@@ -737,13 +746,13 @@ process dedup{
 			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 		emit: for_qc
 	  tuple val(sample), path("dedup.sorted.dedup.bam"),
-	    emit:for_merging
+	    emit: for_merging
 	
 	
 	shell:
 	'''
 	touch !{sample}!{sample_suffix}
-	
+
 	nudup.py --paired-end \
 			 -f trimmed_I1.fq \
 			 --start 8 \
@@ -801,7 +810,7 @@ process export_bam{
 	time '30min'
 	memory '3GB'
 	
-	module 'SAMtools/1.13-GCCcore-10.2.0'
+	module 'SAMtools/1.16-GCCcore-10.2.0'
 
 	input:
           tuple val(sample), path(bam_files, stageAs: 'dedup*.bam')
@@ -813,12 +822,12 @@ process export_bam{
 	
 	publishDir mode: 'copy',
 		pattern: '*.bam',
-		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
+		path: publish_dir + '_bams/',
 		saveAs: { sample + '.bam' }
 	
 	publishDir mode: 'copy',
                 pattern: '*.bam.bai',
-                path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_bams/',
+                path: publish_dir + '_bams/',
                 saveAs: { sample + '.bam.bai' }
 	
 	shell:
@@ -859,7 +868,7 @@ process fastqc_post{
 	
     publishDir mode: 'copy',
 			pattern: '*.html',
-			path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/'+script_version+'_logs/',
+			path: publish_dir + '_logs/',
 			saveAs: {filename -> sample+sample_suffix+'_fastqc_post.html'}
 	
 	
@@ -918,7 +927,7 @@ process finalize{
 	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
 	maxRetries 3
 
-	module 'SAMtools/1.13-GCCcore-10.2.0'
+	module 'SAMtools/1.16-GCCcore-10.2.0'
 	
 	input:
 	  tuple path("dedup.bam"),
@@ -930,12 +939,12 @@ process finalize{
 	
 	publishDir mode: 'copy',
 		pattern: 'sample.log',
-		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_logs/',
+		path: publish_dir + '_logs/',
 		saveAs: { sample + sample_suffix + '.log'}
 
 	publishDir mode: 'copy',
 		pattern: 'final.log',
-		path: '/SAY/standard/mh588-CC1100-MEDGEN/bulk_alignments/' + script_version + '_logs/',
+		path: publish_dir + '_logs/',
 		saveAs: { sample + sample_suffix + '.final.log'}
 	  
 
@@ -1147,7 +1156,7 @@ process finalize{
 
 workflow {
 	tested_successfully = testEverything()
-	ch_init = initialize_db_entry(samples_dir, samples_suffix, tested_successfully)
+	ch_init = initialize_db_entry(tested_successfully, samples_dir, samples_suffix)
 	ch_merged = merge_fastq(ch_init)
 	fastqc_raw(ch_merged)
 	fastq_screen(fastqc_raw.out.outs)
@@ -1156,7 +1165,7 @@ workflow {
 	
 	trim(fastq_screen.out.outs)
 	align(trim.out)
-	dedup(align)
+	dedup(align.out.outs)
 	
 	export_bam(dedup.out.for_merging.groupTuple())
 	
