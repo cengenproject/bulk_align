@@ -4,7 +4,7 @@
 
 // Define inputs batch directory name and associated suffix for each
 
-/*batch_names = [ '200312_D00306_1303': '',
+batch_names = [ '200312_D00306_1303': '',
 		'200320_D00306_1305': '',
 		'201022_D00306_1322': 't1',
 		'201022_D00306_1323': 't2',
@@ -12,10 +12,11 @@
 		'210622_D00306_1363': 't1',
 		'210622_D00306_1364': 't2',
 		'211108_D00306_1377': 't1',
-		'211103_D00306_1375': 't2']
-*/
+		'211103_D00306_1375': 't2',
+		'230113': '']
+
 // test samples
-batch_names = [ '000000_D00000_0000': 'bis']
+//batch_names = [ '000000_D00000_0000': 'bis']
 
 
 // Locations and parameters
@@ -24,8 +25,8 @@ params.WSversion = 'WS289'
 params.references_dir = '/gpfs/ycga/project/ysm/hammarlund/aw853/references'
 params.fastq_screen_conf = '/gpfs/ycga/project/ysm/hammarlund/aw853/references/2205a_fastq_screen.conf'
 
-params.db_name = 'test_cengen'
-params.db_table_name = 'alig_11'
+params.db_name = 'cengen'
+params.db_table_name = 'alig_12'
 
 /* ----------------------------------------------------------------------------
               No  modification should be required below this line
@@ -33,7 +34,7 @@ params.db_table_name = 'alig_11'
 
 
 // update when this script is modified
-script_version = "bsn11b"
+script_version = "bsn12"
 
 
 // output directory
