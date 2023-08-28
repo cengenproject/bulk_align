@@ -33,7 +33,7 @@ params.db_table_name = 'alig_11'
 
 
 // update when this script is modified
-script_version = "bsn11a"
+script_version = "bsn11b"
 
 
 // output directory
@@ -301,7 +301,63 @@ process merge_fastq{
 	'''
 }
 
+process sort_fastqs{
+	input:
+	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
+		path("sample.log"), val(sample), val(batch), val(sample_suffix)
+	
+	output:
+	  tuple path('sorted_R1.fastq.gz'), path('sorted_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
+		path("sample.log"), val(sample), val(batch), val(sample_suffix)
+	
+	shell:
+	'''
+	zcat merged_R1.fastq.gz | paste - - - - | sort -k1,1 -t " " | tr "\t" "\n" | gzip -c > sorted_R1.fastq.gz
+	zcat merged_R2.fastq.gz | paste - - - - | sort -k1,1 -t " " | tr "\t" "\n" | gzip -c > sorted_R2.fastq.gz
+	cat trimmed_I1.fq | paste - - - - | sort -k1,1 -t " " | tr "\t" "\n" | gzip -c > sorted_I1.fastq.gz
+	'''
+}
 
+process annotate_umis{
+	
+	input:
+	  tuple path('sorted_R1.fastq.gz'), path('sorted_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
+		path("sample.log"), val(sample), val(batch), val(sample_suffix)
+	
+	output:
+	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
+		path("sample.log"), val(sample), val(batch), val(sample_suffix)
+	
+	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/umi_tools'
+	
+	shell:
+	'''
+	touch !{sample}!{sample_suffix}
+	
+	echo >> sample.log
+	echo "### UMI-tools extract ###" >> sample.log
+	echo >> sample.log
+	
+	
+	umi_tools extract \\
+		-I sorted_I1.fastq.gz \\
+		--read2-in=sorted_R1.fastq.gz \\
+		--read2-out=umi_R1.fastq.gz \\
+		--extract-method=string \\
+		--error-correct-cell \\
+		--bc-pattern=NNNNNNNN \\
+	  >> sample.log
+	
+	umi_tools extract \\
+		-I sorted_I1.fastq.gz \\
+		--read2-in=sorted_R2.fastq.gz \\
+		--read2-out=umi_R2.fastq.gz \\
+		--extract-method=string \\
+		--error-correct-cell \\
+		--bc-pattern=NNNNNNNN \\
+	  >> sample.log
+	'''
+}
 
 process fastqc_raw{
 	cpus '2'
@@ -314,11 +370,11 @@ process fastqc_raw{
 	module 'FastQC/0.11.9-Java-11'
 	
 	input:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
+	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 
 	output:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
+	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 		emit: outs
 	  path("*.html")
@@ -327,7 +383,7 @@ process fastqc_raw{
 			pattern: '*.html',
 			path: publish_dir + '_logs/',
 			saveAs: {filename ->
-					read_file = (filename =~ /merged_R([12])_fastqc/)[0][1]
+					read_file = (filename =~ /umi_R([12])_fastqc/)[0][1]
 					sample+sample_suffix+'_fastqc_raw_R'+read_file+'.html'}
 
 	shell:
@@ -339,19 +395,19 @@ process fastqc_raw{
 	echo "----- FASTQC raw (pre-alignment) -----" >> sample.log
 	
 	
-	fastqc --extract --threads $SLURM_CPUS_PER_TASK merged_R*
+	fastqc --extract --threads $SLURM_CPUS_PER_TASK umi_R*
 	
 	
 	echo "    ~~~~~~~~~~~~  FASTQC raw R1  "    >> sample.log
-	cat merged_R1_fastqc/summary.txt    >> sample.log
+	cat umi_R1_fastqc/summary.txt    >> sample.log
 	echo "    ~~~~~~~~~~~~  FASTQC raw R2  "    >> sample.log
-	cat merged_R2_fastqc/summary.txt    >> sample.log
+	cat umi_R2_fastqc/summary.txt    >> sample.log
 	
 	
 	# Process results: read summary file as a bash array
 	
-	arr1=($(cat merged_R1_fastqc/summary.txt | cut -f1))
-	arr2=($(cat merged_R2_fastqc/summary.txt | cut -f1))
+	arr1=($(cat umi_R1_fastqc/summary.txt | cut -f1))
+	arr2=($(cat umi_R2_fastqc/summary.txt | cut -f1))
 
 	worst_of (){
 		if [ $1 == "FAIL"  ] || [ $2 == "FAIL" ]
@@ -368,18 +424,15 @@ process fastqc_raw{
 	
 	sql_command="UPDATE !{params.db_table_name}
 	  SET	alig_fqcraw_basic_stats		 = '$(worst_of ${arr1[0]} ${arr2[0]})',
-		alig_fqcraw_per_base_quality	 = '$(worst_of ${arr1[1]} ${arr2[1]})',
-		alig_fqcraw_per_tile_quality	 = '$(worst_of ${arr1[2]} ${arr2[2]})',
-		alig_fqcraw_per_seq_scores		 = '$(worst_of ${arr1[3]} ${arr2[3]})',
-		alig_fqcraw_per_base_seq_content = '$(worst_of ${arr1[4]} ${arr2[4]})',
-		alig_fqcraw_per_base_gc		     = '$(worst_of ${arr1[5]} ${arr2[5]})',
-		alig_fqcraw_per_base_n			 = '$(worst_of ${arr1[6]} ${arr2[6]})',
-		alig_fqcraw_seq_length			 = '$(worst_of ${arr1[7]} ${arr2[7]})',
-		alig_fqcraw_duplication		     = '$(worst_of ${arr1[8]} ${arr2[8]})',
-		alig_fqcraw_overrepresented_seq	 = '$(worst_of ${arr1[9]} ${arr2[9]})',
-		alig_fqcraw_adapter_content	     = '$(worst_of ${arr1[10]} ${arr2[10]})'
+		alig_fqcraw_per_base_seq_content = '$(worst_of ${arr1[1]} ${arr2[1]})',
+		alig_fqcraw_per_seq_gc           =  '$(worst_of ${arr1[2]} ${arr2[2]})',
+		alig_fqcraw_per_base_n		 = '$(worst_of ${arr1[3]} ${arr2[3]})',
+		alig_fqcraw_seq_length		 = '$(worst_of ${arr1[4]} ${arr2[4]})',
+		alig_fqcraw_duplication	         = '$(worst_of ${arr1[5]} ${arr2[5]})',
+		alig_fqcraw_overrepresented_seq	 = '$(worst_of ${arr1[6]} ${arr2[6]})',
+		alig_fqcraw_adapter_content      = '$(worst_of ${arr1[7]} ${arr2[7]})'
 	  WHERE alig_lib_id		= '!{sample}!{sample_suffix}' AND
-		alig_pid			= '!{script_version}' AND
+		alig_pid		= '!{script_version}' AND
 		alig_sequ_batch		= '!{batch}';"
 	
 	source ~/.cengen_database.id
@@ -403,14 +456,14 @@ process fastq_screen{
 	conda 'fastq-screen'
 	
 	input:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
+	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 
 	output:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
+	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 		emit: outs
-	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix),
+	  tuple path("umi_R1_screen.txt"), path("umi_R2_screen.txt"), val(sample), val(batch), val(sample_suffix),
 	    emit: summaries
 	  path("*_screen.*")
 
@@ -419,7 +472,7 @@ process fastq_screen{
 			path: publish_dir + '_logs/',
 			saveAs: {filename ->
 					println("Before"+filename)
-					read_file = (filename =~ /merged_R([12])_screen\.(html|png|txt)/)[0]
+					read_file = (filename =~ /umi_R([12])_screen\.(html|png|txt)/)[0]
 					println("res "+read_file)
 					sample+sample_suffix+'_fastqscreen_R'+read_file[1]+'.'+read_file[2]}
 
@@ -434,13 +487,13 @@ process fastq_screen{
 	--conf !{params.fastq_screen_conf} \
 	--subset 100000 \
 	--threads $SLURM_CPUS_PER_TASK \
-	merged_R*.fastq.gz
+	umi_R*.fastq.gz
 	
 	echo "-----  FastQ-Screen -----" >> sample.log
 	echo "   ~~~~~ R1 screen " >> sample.log
-	cat merged_R1_screen.txt >> sample.log
+	cat umi_R1_screen.txt >> sample.log
 	echo "   ~~~~~ R2 screen " >> sample.log
-	cat merged_R2_screen.txt >> sample.log
+	cat umi_R2_screen.txt >> sample.log
 	echo >> sample.log
 	
 	'''
@@ -457,7 +510,7 @@ process db_fastqscreen{
 	module 'R/4.2.0-foss-2020b'
 	
 	input:
-	  tuple path("merged_R1_screen.txt"), path("merged_R2_screen.txt"), val(sample), val(batch), val(sample_suffix)
+	  tuple path("umi_R1_screen.txt"), path("umi_R2_screen.txt"), val(sample), val(batch), val(sample_suffix)
 	  
 	shell:
 	'''
@@ -522,8 +575,8 @@ process db_fastqscreen{
 	
 	cat("Updating DB with FastQ-Screen results for !{sample}!{sample_suffix}\n")
 	
-	fqscr_R1 <- parse_fqscr_summary("merged_R1_screen.txt")
-	fqscr_R2 <- parse_fqscr_summary("merged_R2_screen.txt")
+	fqscr_R1 <- parse_fqscr_summary("umi_R1_screen.txt")
+	fqscr_R2 <- parse_fqscr_summary("umi_R2_screen.txt")
 	
 
 	sql_command <- paste0("UPDATE !{params.db_table_name}
@@ -564,11 +617,11 @@ process trim{
 	module 'BBMap/38.90-GCCcore-10.2.0'
 	
 	input:
-	  tuple path('merged_R1.fastq.gz'), path('merged_R2.fastq.gz'), path('trimmed_I1.fq'),
+	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
-	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('trimmed_I1.fq'),
+	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	
@@ -580,8 +633,8 @@ process trim{
 	
 	# weirdly, BBduk puts the log in stderr
 	
-	bbduk.sh in1=merged_R1.fastq.gz \
-		 in2=merged_R2.fastq.gz \
+	bbduk.sh in1=umi_R1.fastq.gz \
+		 in2=umi_R2.fastq.gz \
 		 out1=trimmed_R1.fastq.gz \
 		 out2=trimmed_R2.fastq.gz \
 		 ref="/vast/palmer/apps/avx2/software/Trimmomatic/0.39-Java-11/adapters/TruSeq3-PE.fa" \
@@ -637,11 +690,11 @@ process align{
 	module 'STAR/'+ STAR_version +'-GCCcore-10.2.0'
 	
 	input:
-	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('trimmed_I1.fq'),
+	  tuple path("trimmed_R1.fastq.gz"), path("trimmed_R2.fastq.gz"), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
-	  tuple path("aligned_Aligned.sortedByCoord.out.bam"), path('trimmed_I1.fq'),
+	  tuple path("aligned_Aligned.sortedByCoord.out.bam"), path('sorted_I1.fastq.gz'),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 			emit: outs
 	  path("*_SJ.out.tab")
@@ -725,7 +778,48 @@ process align{
 	'''	
 }
 
-
+process dedup2{
+	cpus 1
+	time '1h'
+	memory '1GB'
+	
+	module 'SAMtools'
+	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/umi_tools'
+	
+	input:
+	  tuple path("aligned.bam"), path('sorted_I1.fastq.gz'),
+			path("sample.log"), val(sample), val(batch), val(sample_suffix)
+	
+	output:
+	  tuple path("deduplicated.bam"),
+			path("sample.log"), val(sample), val(batch), val(sample_suffix),
+		emit: for_qc
+	  tuple val(sample), path("deduplicated.bam"),
+	    emit: for_merging
+	
+	shell:
+	'''
+	touch !{sample}!{sample_suffix}
+	
+	echo >> sample.log
+	echo "### UMI-tools dedup ###" >> sample.log
+	echo >> sample.log
+	
+	echo "Indexing"
+	samtools index aligned.bam
+	
+	echo "Deduplicating"
+	umi_tools dedup \\
+		  -I aligned.bam \\
+		  --paired \\
+		  --output-stats=deduplicated \\
+		  -S deduplicated.bam \\
+		>> sample.log
+	
+	
+	'''
+	
+}
 process dedup{
 	cpus 1
 	time '5h'
@@ -803,7 +897,7 @@ process dedup{
 }
 
 
-						
+
 
 process export_bam{
 	cpus '5'
@@ -856,11 +950,11 @@ process fastqc_post{
 	
 		
 	input:
-	  tuple path("dedup.bam"),
+	  tuple path("deduplicated.bam"),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
 	output:
-	  tuple path("dedup.bam"),
+	  tuple path("deduplicated.bam"),
 			path("sample.log"), val(sample), val(batch), val(sample_suffix),
 		emit: outs
 	  path "*.html"
@@ -876,16 +970,16 @@ process fastqc_post{
 	'''
 	touch !{sample}!{sample_suffix}
 	
-	fastqc --extract --threads $SLURM_CPUS_PER_TASK dedup.bam
+	fastqc --extract --threads $SLURM_CPUS_PER_TASK deduplicated.bam
 	
 	
 	echo "---------  FASTQC post  ---------"   >> sample.log
-	cat dedup_fastqc/summary.txt               >> sample.log
+	cat deduplicated_fastqc/summary.txt               >> sample.log
 	
 	
 	# Process results: read summary file as a bash array
 	
-	arr=($(cat dedup_fastqc/summary.txt | cut -f1))
+	arr=($(cat deduplicated_fastqc/summary.txt | cut -f1))
 	
 	
 	
@@ -1158,21 +1252,25 @@ workflow {
 	tested_successfully = testEverything()
 	ch_init = initialize_db_entry(tested_successfully, samples_dir, samples_suffix)
 	ch_merged = merge_fastq(ch_init)
-	fastqc_raw(ch_merged)
+	sort_fastqs(ch_merged)
+	annotate_umis(sort_fastqs.out)
+	fastqc_raw(annotate_umis.out)
 	fastq_screen(fastqc_raw.out.outs)
 	
 	db_fastqscreen(fastq_screen.out.summaries)
 	
 	trim(fastq_screen.out.outs)
 	align(trim.out)
-	dedup(align.out.outs)
+	dedup2(align.out.outs)
 	
-	export_bam(dedup.out.for_merging.groupTuple())
+	export_bam(dedup2.out.for_merging.groupTuple())
 	
-	fastqc_post(dedup.out.for_qc)
+	fastqc_post(dedup2.out.for_qc)
 
 	finalize(fastqc_post.out.outs)
 	
 }
 
-			
+
+
+
