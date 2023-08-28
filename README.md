@@ -15,6 +15,15 @@ Obtain database IDs and store them in `~/.cengen_database.id`.
 
 Some processes call `R` code, and may require the following packages to be installed: `{readr}`, `{stringr}`, `{DBI}`, `{RMariaDB}`, `{wbData}`.
 
+Create `conda` environments:
+
+```
+conda create -n fqscreen fastq-screen
+conda create -n nudup python=2.7
+conda create -n umitools umi_tools
+```
+and set the corresponding paths in the align.nf script.
+
 
 ## Nextflow configuration
 Before running Nextflow, you should create a config file at `~/.nextflow/config` with the following:

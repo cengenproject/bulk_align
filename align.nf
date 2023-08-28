@@ -92,9 +92,10 @@ process testEverything{
 	module 'R'
 	module 'STAR/'+STAR_version+'-GCCcore-10.2.0'
 
-	conda 'python=2.7'
+	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/nudup'
 
-	cpus = 2
+	cpus = '1'
+	memory = '1 GB'
 	
 	shell:
 	'''
@@ -454,7 +455,7 @@ process fastq_screen{
 	time '2h'
 	memory '10GB'
 
-	conda 'fastq-screen'
+	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/fqscreen'
 	
 	input:
 	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
