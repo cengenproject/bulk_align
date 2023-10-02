@@ -4,17 +4,18 @@
 
 // Define inputs batch directory name and associated suffix for each
 
-batch_names = [ '200312_D00306_1303': '',
+batch_names = [ /*'200312_D00306_1303': '',
 		'200320_D00306_1305': '',
 		'201022_D00306_1322': 't1',
-		'201022_D00306_1323': 't2',
+		'201022_D00306_1323': 't2',*/
 		'210108_D00306_1332': '',
 		'210622_D00306_1363': 't1',
 		'210622_D00306_1364': 't2',
-		'211108_D00306_1377': 't1',
+		'211108_D00306_1377': 't1']
+/*,
 		'211103_D00306_1375': 't2',
 		'230113': '']
-
+*/
 // test samples
 //batch_names = [ '000000_D00000_0000': 'bis']
 
@@ -312,11 +313,17 @@ process sort_fastqs{
 	  tuple path('sorted_R1.fastq.gz'), path('sorted_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 		path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
+        memory '10GB'
+
 	shell:
 	'''
+	echo "sort R1"
 	zcat merged_R1.fastq.gz | paste - - - - | sort -k1,1 -t " " | tr "\t" "\n" | gzip -c > sorted_R1.fastq.gz
+	echo "R2"
 	zcat merged_R2.fastq.gz | paste - - - - | sort -k1,1 -t " " | tr "\t" "\n" | gzip -c > sorted_R2.fastq.gz
+	echo "I1"
 	cat trimmed_I1.fq | paste - - - - | sort -k1,1 -t " " | tr "\t" "\n" | gzip -c > sorted_I1.fastq.gz
+	echo "Done"
 	'''
 }
 
@@ -782,8 +789,8 @@ process align{
 
 process dedup2{
 	cpus 1
-	time '1h'
-	memory '1GB'
+	time '2h'
+	memory '50GB'
 	
 	module 'SAMtools'
 	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/umi_tools'
