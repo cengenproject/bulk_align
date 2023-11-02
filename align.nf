@@ -7,15 +7,15 @@
 batch_names = [ /*'200312_D00306_1303': '',
 		'200320_D00306_1305': '',
 		'201022_D00306_1322': 't1',
-		'201022_D00306_1323': 't2',*/
+		'201022_D00306_1323': 't2',
 		'210108_D00306_1332': '',
 		'210622_D00306_1363': 't1',
 		'210622_D00306_1364': 't2',
-		'211108_D00306_1377': 't1']
-/*,
-		'211103_D00306_1375': 't2',
-		'230113': '']
+		'211108_D00306_1377': 't1',
+		'211103_D00306_1375': 't2']
 */
+		'0000125000': '']
+
 // test samples
 //batch_names = [ '000000_D00000_0000': 'bis']
 
@@ -313,7 +313,8 @@ process sort_fastqs{
 	  tuple path('sorted_R1.fastq.gz'), path('sorted_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 		path("sample.log"), val(sample), val(batch), val(sample_suffix)
 	
-        memory '10GB'
+        memory '20GB'
+	time '7h'
 
 	shell:
 	'''
@@ -336,6 +337,8 @@ process annotate_umis{
 	output:
 	  tuple path('umi_R1.fastq.gz'), path('umi_R2.fastq.gz'), path('sorted_I1.fastq.gz'),
 		path("sample.log"), val(sample), val(batch), val(sample_suffix)
+	
+	time '7h'
 	
 	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/umi_tools'
 	
@@ -691,7 +694,7 @@ process trim{
 process align{
 	cpus 10
 	time '5h'
-	memory '15GB'
+	memory '35GB'
 
 	errorStrategy { sleep((task.attempt - 1) * 2000); return 'retry' }
 	maxRetries 3
@@ -719,6 +722,7 @@ process align{
 	touch !{sample}!{sample_suffix}
 	
 	STAR --runThreadN $SLURM_CPUS_PER_TASK \
+		--limitBAMsortRAM 10000000000 \
 		--genomeDir !{STAR_index_dir} \
 		--readFilesIn trimmed_R1.fastq.gz trimmed_R2.fastq.gz \
 		--readFilesCommand zcat \
@@ -789,8 +793,8 @@ process align{
 
 process dedup2{
 	cpus 1
-	time '2h'
-	memory '50GB'
+	time '17h'
+	memory '100GB'
 	
 	module 'SAMtools'
 	conda '/gpfs/gibbs/project/hammarlund/aw853/conda_envs/umi_tools'

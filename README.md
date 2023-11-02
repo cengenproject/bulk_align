@@ -2,7 +2,7 @@
 
 This is the workflow to process all sequencing data (obtained from the YCGA sequencing core), to obtain bam, SJ counts and gene coutns, along with useful information uploaded to the database. In addition, a number of log files are deposited in the corresponding directory, for further examination of samples that fail or display weird results.
 
-![nextflow_dag](DAG10.svg)
+![nextflow_dag](dag12.dot)
 
 
 
@@ -94,4 +94,5 @@ In run_nf.sh, you can add a `-with-dag dag10.dot` option. The dot file can be co
 * bsn8: qc and alignment done successively to keep sample names.
 * bsn9: same results as bsn8, but processes refactored to have a single step per process.
 * bsn10: fastq-screen before alignment, additional fastQC after alignment (on the bam). In addition, refactoring: database gets updated by each relevant process so the Channel that gets passed around contains only the main files.
+* bsn12: updates to use Nextflow DSL2, adapted for larger sample, replaced nudup with umi-tools
 
