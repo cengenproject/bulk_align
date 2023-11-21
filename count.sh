@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --partition=day
+#SBATCH --partition=week
 #SBATCH --job-name=count
-#SBATCH -c 1
-#SBATCH --mem=10G
-#SBATCH --time=5:00:00
+#SBATCH -c 10
+#SBATCH --mem=20G
+#SBATCH --time=2-23:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=alexis.weinreb@yale.edu
 
@@ -20,9 +20,11 @@ mkdir -p results/counts
 module load Subread
 
 featureCounts -a $ref_gtf \
-	-o results/counts/231102_bsn12_count \
+	-o results/counts/231116_bsn12_count \
 	-p --countReadPairs \
+	-s 1 \
 	-C \
+	-B \
 	-t exon \
 	-g gene_id \
 	-T $SLURM_CPUS_PER_TASK \
