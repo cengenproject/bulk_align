@@ -6,6 +6,7 @@ FastQC version 0.11.9
 BBduk: BBMap version 38.90
 STAR version 2.7.7a
 
+featureCounts: subread v2.0.3
 
 
 
